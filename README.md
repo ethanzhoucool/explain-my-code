@@ -1,67 +1,81 @@
-# Explain Code Like I'm 5
+# Explain My Code
 
-A web application that analyzes Python and Java code and generates human-friendly explanations at multiple knowledge levels.
+A small web app that analyzes Python and Java source code and produces human-friendly, line-level explanations at three knowledge levels (ELI5, Beginner, Developer).
+
+Live demo: https://explain-my-code-w3sj.onrender.com
 
 ## Features
 
-- **Multi-level explanations**: ELI5, Beginner, and Developer modes
-- **Interactive highlighting**: Hover over keywords to see what they do
-- **Color-coded syntax**: Different colors for loops, functions, variables, etc.
-- **Two language support**: Python and Java
+- Multi-level explanations: ELI5, Beginner, Developer
+- Interactive highlighting: hover keywords to see explanations
+- Rule-based parsing: lightweight keyword templates (no AI required)
+- Supports Python and Java (easy to extend)
 
 ## Tech Stack
 
-- **Backend**: Python (Flask)
-- **Frontend**: HTML, CSS, JavaScript
-- **Parsing**: Rule-based keyword detection with custom templates
+- Backend: Python (Flask)
+- Frontend: HTML, CSS, JavaScript
 
-## How It Works
+## How it works
 
-Instead of using AI or complex compilers, this app uses:
-1. **Keyword Detection** - Scans code for programming constructs
-2. **Template Matching** - Maps keywords to pre-written explanations
-3. **Dynamic Highlighting** - Color-codes and adds tooltips to each feature
+1. Scan each line for known language keywords/patterns
+2. Match detected patterns to template explanations
+3. Render highlighted lines with tooltip text for quick reading
 
-## Installation
+## Run locally
+
+Recommended: use Python 3.10+ (the project uses 3.13 in `runtime.txt` but 3.10+ works fine).
+
+Install and run:
+
 ```bash
-# Clone the repository
-git clone <your-repo-url>
-
-# Navigate to project
+git clone https://github.com/ethanzhoucool/explain-my-code.git
 cd explain-my-code
-
-# Install dependencies
-pip3 install flask
-
-# Run the application
+python3 -m venv .venv        # optional, recommended
+source .venv/bin/activate    # macOS / Linux
+pip install -r requirements.txt
 python3 app.py
 ```
 
-Visit `http://127.0.0.1:5000` in your browser.
+Open your browser at: http://127.0.0.1:5000
 
-## Project Structure
+## Deploying to Render (already deployed)
+
+This repository is configured for Render using a `Procfile`, `requirements.txt`, and `runtime.txt`.
+
+If you want to (re)deploy or connect a fork:
+
+1. Push your repository to GitHub
+2. Create a new Web Service in Render and connect the repo
+3. Use the `main` branch, build command `pip install -r requirements.txt`, and start command `gunicorn app:app`
+
+The live URL for this deployment is:
+
+https://explain-my-code-w3sj.onrender.com
+
+## Project structure
+
 ```
 explain-my-code/
-├── app.py                 # Flask application
-├── templates/
-│   ├── index.html        # Home page
-│   └── result.html       # Results page
-├── static/
-│   ├── style.css         # Styling
-│   └── script.js         # Tooltip functionality
-├── explainer/
-│   ├── python_rules.py   # Python analysis logic
-│   └── java_rules.py     # Java analysis logic
-└── README.md
+├── app.py                 # Flask application (entrypoint)
+├── Procfile               # Gunicorn start command for Render
+├── requirements.txt       # Python dependencies
+├── runtime.txt            # Python runtime used on Render
+├── templates/             # Jinja2 HTML templates
+├── static/                # CSS and JS
+└── explainer/             # language-specific rules and templates
+	├── python_rules.py
+	└── java_rules.py
 ```
 
-## Future Improvements
+## Extending rules
 
-- Add more programming languages (JavaScript, C++, etc.)
-- Support for more advanced syntax (classes, decorators, etc.)
-- Export explanations as PDF
-- Dark mode toggle
+Add keywords and text templates in `explainer/python_rules.py` and `explainer/java_rules.py`. Each feature has multi-level template text (ELI5 / beginner / developer) and an optional color.
 
+## Notes and TODOs
+
+- The parser is intentionally simple and rule-based — it works well for quick explanations but won't fully parse complex syntax.
+- Future ideas: add more languages, improve parsing with tokenizers (or optional LSP/AST use), and add unit tests.
 
 ## License
 
