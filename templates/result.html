@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Code Explanation</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Code Explanation</h1>
+        
+        <span class="level-badge">{{ level|replace('_', ' ')|title }} Mode</span>
+        
+        <h2>{{ language|title }} Code</h2>
+        <p class="instruction">Hover over highlighted keywords for explanations</p>
+        
+        <div class="code-container">
+            {% for line in annotated_lines %}
+            <div class="code-line">
+                <div class="line-number">{{ line.number }}</div>
+                <div class="line-content">{{ line.highlighted|safe }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <a href="/" class="back-link">Explain Another Code</a>
+    </div>
+    <footer>
+        Built by Ethan Zhou | <a href="https://github.com/ethanzhoucool/explain-my-code">View on GitHub</a>
+    </footer>
+    <!-- Add JavaScript -->
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Explain My Code</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Explain My Code</h1>
+        {% if error %}
+        <div class="error-message">
+            {{ error }}
+        </div>
+        {% endif %}
+        <div class="examples">
+            <p>Quick Examples:</p>
+            <button type="button" class="example-btn" data-lang="python">Python Loop</button>
+            <button type="button" class="example-btn" data-lang="java">Java Hello World</button>
+        </div>
+
+        <form method="POST" action="/explain">
+            <div class="form-group">
+                <label for="code">Code</label>
+                <textarea name="code" id="code" rows="15" placeholder="Paste your code here..." required></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label for="language">Language</label>
+                <select name="language" id="language">
+                    <option value="python">Python</option>
+                    <option value="java">Java</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="level">Explanation Level</label>
+                <select name="level" id="level">
+                    <option value="eli5">ELI5 (Explain Like I'm 5)</option>
+                    <option value="beginner">Beginner</option>
+                    <option value="developer">Developer</option>
+                </select>
+            </div>
+            
+            <button type="submit">Explain Code</button>
+        </form>
+        <footer>
+            Built by Ethan Zhou | <a href="https://github.com/ethanzhoucool/explain-my-code">View on GitHub</a>
+        </footer>
+    </div>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
