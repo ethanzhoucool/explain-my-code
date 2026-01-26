@@ -13,6 +13,17 @@
             <span class="mode-badge {% if mode == 'ai' %}mode-ai{% else %}mode-rule{% endif %}">
                 {% if mode == 'ai' %}🤖 AI-Powered{% else %}⚡ Rule-based{% endif %}
             </span>
+            <!-- Small toggle button next to badges -->
+            {% if mode == 'rule-based' %}
+            <button type="button" class="mode-switch-btn ai-switch" id="switchToAI">
+                <span class="btn-text">Try AI ✨</span>
+                <span class="btn-loading" style="display:none;">Loading...</span>
+            </button>
+            {% else %}
+            <button type="button" class="mode-switch-btn rule-switch" id="switchToRule">
+                ⚡ Rule-based
+            </button>
+            {% endif %}
         </div>
         
         <h2>{{ language|title }} Code</h2>
@@ -22,49 +33,191 @@
         <p class="instruction">Hover over highlighted keywords for explanations</p>
         {% endif %}
         
-        <div class="code-container">
-            {% for line in annotated_lines %}
-            <div class="code-line">
-                <div class="line-number">{{ line.number }}</div>
-                <div class="line-content">{{ line.highlighted|safe }}</div>
+        <!-- Rule-based content -->
+        <div id="rule-content" style="{% if mode == 'ai' %}display:none;{% endif %}">
+            <div class="code-container">
+                {% for line in rule_annotated_lines %}
+                <div class="code-line">
+                    <div class="line-number">{{ line.number }}</div>
+                    <div class="line-content">{{ line.highlighted|safe }}</div>
+                </div>
+                {% endfor %}
             </div>
-            {% endfor %}
         </div>
         
-        {% if mode == 'ai' and ai_explanation %}
-        <h2>Summary</h2>
-        <div class="ai-explanation-box">
-            {{ ai_explanation }}
-        </div>
-        {% endif %}
-        
-        <!-- Mode toggle button -->
-        <div class="mode-toggle">
-            {% if mode == 'rule-based' %}
-            <form method="POST" action="/explain">
-                <input type="hidden" name="code" value="{{ code }}">
-                <input type="hidden" name="language" value="{{ language }}">
-                <input type="hidden" name="level" value="{{ level }}">
-                <input type="hidden" name="mode" value="ai">
-                <button type="submit" class="toggle-btn ai-btn">🤖 Switch to AI-Powered Explanation</button>
-            </form>
-            {% else %}
-            <form method="POST" action="/explain">
-                <input type="hidden" name="code" value="{{ code }}">
-                <input type="hidden" name="language" value="{{ language }}">
-                <input type="hidden" name="level" value="{{ level }}">
-                <input type="hidden" name="mode" value="rule-based">
-                <button type="submit" class="toggle-btn rule-btn">⚡ Switch to Rule-based Explanation</button>
-            </form>
+        <!-- AI content (shown or cached) -->
+        <div id="ai-content" style="{% if mode != 'ai' %}display:none;{% endif %}">
+            {% if mode == 'ai' %}
+            <div class="code-container">
+                {% for line in annotated_lines %}
+                <div class="code-line">
+                    <div class="line-number">{{ line.number }}</div>
+                    <div class="line-content">{{ line.highlighted|safe }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% if ai_explanation %}
+            <h2>Summary</h2>
+            <div class="ai-explanation-box">
+                {{ ai_explanation }}
+            </div>
+            {% endif %}
             {% endif %}
         </div>
+        
+        <!-- Hidden form for AI request -->
+        <form id="aiForm" method="POST" action="/explain" style="display:none;">
+            <input type="hidden" name="code" value="{{ code }}">
+            <input type="hidden" name="language" value="{{ language }}">
+            <input type="hidden" name="level" value="{{ level }}">
+            <input type="hidden" name="mode" value="ai">
+        </form>
         
         <a href="/" class="back-link">Explain Another Code</a>
     </div>
     <footer>
         Built by Ethan Zhou | <a href="https://github.com/ethanzhoucool/explain-my-code">View on GitHub</a>
     </footer>
-    <!-- Load JavaScript for tooltips (both modes now have highlighting) -->
+    
     <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script>
+        // Store current mode and AI cache status
+        let currentMode = '{{ mode }}';
+        let aiLoaded = {% if mode == 'ai' %}true{% else %}false{% endif %};
+        let aiContentCache = null;
+        
+        {% if mode == 'ai' %}
+        // Cache the AI content if we're already in AI mode
+        aiContentCache = document.getElementById('ai-content').innerHTML;
+        {% endif %}
+        
+        // Switch to AI button
+        const switchToAIBtn = document.getElementById('switchToAI');
+        if (switchToAIBtn) {
+            switchToAIBtn.addEventListener('click', function() {
+                if (aiLoaded && aiContentCache) {
+                    // Use cached AI content
+                    document.getElementById('ai-content').innerHTML = aiContentCache;
+                    document.getElementById('ai-content').style.display = 'block';
+                    document.getElementById('rule-content').style.display = 'none';
+                    updateBadgeAndButton('ai');
+                    // Re-setup tooltips for AI content
+                    setupAITooltips();
+                } else {
+                    // Show loading state and submit form
+                    const btnText = this.querySelector('.btn-text');
+                    const btnLoading = this.querySelector('.btn-loading');
+                    btnText.style.display = 'none';
+                    btnLoading.style.display = 'inline';
+                    this.disabled = true;
+                    this.classList.add('loading');
+                    document.getElementById('aiForm').submit();
+                }
+            });
+        }
+        
+        // Switch to Rule-based button
+        const switchToRuleBtn = document.getElementById('switchToRule');
+        if (switchToRuleBtn) {
+            switchToRuleBtn.addEventListener('click', function() {
+                // Cache current AI content before switching
+                if (!aiContentCache) {
+                    aiContentCache = document.getElementById('ai-content').innerHTML;
+                }
+                aiLoaded = true;
+                
+                // Switch views
+                document.getElementById('ai-content').style.display = 'none';
+                document.getElementById('rule-content').style.display = 'block';
+                updateBadgeAndButton('rule-based');
+                // Re-setup tooltips for rule content
+                setupRuleTooltips();
+            });
+        }
+        
+        function updateBadgeAndButton(mode) {
+            const badge = document.querySelector('.mode-badge');
+            const instruction = document.querySelector('.instruction');
+            const badgesDiv = document.querySelector('.badges');
+            
+            // Remove existing switch button
+            const existingBtn = badgesDiv.querySelector('.mode-switch-btn');
+            if (existingBtn) existingBtn.remove();
+            
+            if (mode === 'ai') {
+                badge.className = 'mode-badge mode-ai';
+                badge.innerHTML = '🤖 AI-Powered';
+                instruction.textContent = 'Hover over each line for AI-generated explanations';
+                
+                // Add rule-based button
+                const newBtn = document.createElement('button');
+                newBtn.type = 'button';
+                newBtn.className = 'mode-switch-btn rule-switch';
+                newBtn.id = 'switchToRule';
+                newBtn.innerHTML = '⚡ Rule-based';
+                newBtn.addEventListener('click', function() {
+                    if (!aiContentCache) {
+                        aiContentCache = document.getElementById('ai-content').innerHTML;
+                    }
+                    aiLoaded = true;
+                    document.getElementById('ai-content').style.display = 'none';
+                    document.getElementById('rule-content').style.display = 'block';
+                    updateBadgeAndButton('rule-based');
+                    setupRuleTooltips();
+                });
+                badgesDiv.appendChild(newBtn);
+            } else {
+                badge.className = 'mode-badge mode-rule';
+                badge.innerHTML = '⚡ Rule-based';
+                instruction.textContent = 'Hover over highlighted keywords for explanations';
+                
+                // Add AI button
+                const newBtn = document.createElement('button');
+                newBtn.type = 'button';
+                newBtn.className = 'mode-switch-btn ai-switch';
+                newBtn.id = 'switchToAI';
+                newBtn.innerHTML = '<span class="btn-text">Try AI ✨</span><span class="btn-loading" style="display:none;">Loading...</span>';
+                newBtn.addEventListener('click', function() {
+                    if (aiLoaded && aiContentCache) {
+                        document.getElementById('ai-content').innerHTML = aiContentCache;
+                        document.getElementById('ai-content').style.display = 'block';
+                        document.getElementById('rule-content').style.display = 'none';
+                        updateBadgeAndButton('ai');
+                        setupAITooltips();
+                    } else {
+                        const btnText = this.querySelector('.btn-text');
+                        const btnLoading = this.querySelector('.btn-loading');
+                        btnText.style.display = 'none';
+                        btnLoading.style.display = 'inline';
+                        this.disabled = true;
+                        this.classList.add('loading');
+                        document.getElementById('aiForm').submit();
+                    }
+                });
+                badgesDiv.appendChild(newBtn);
+            }
+            currentMode = mode;
+        }
+        
+        function setupAITooltips() {
+            const aiHighlights = document.querySelectorAll('#ai-content .ai-line-highlight');
+            aiHighlights.forEach(highlight => {
+                if (!highlight.dataset.tooltipSetup) {
+                    setupTooltip(highlight);
+                    highlight.dataset.tooltipSetup = 'true';
+                }
+            });
+        }
+        
+        function setupRuleTooltips() {
+            const highlights = document.querySelectorAll('#rule-content .highlight');
+            highlights.forEach(highlight => {
+                if (!highlight.dataset.tooltipSetup) {
+                    setupTooltip(highlight);
+                    highlight.dataset.tooltipSetup = 'true';
+                }
+            });
+        }
+    </script>
 </body>
 </html>

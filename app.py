@@ -20,11 +20,20 @@ def explain():
     if not code or code.strip() == '':
         return render_template('index.html', error="Please paste some code first!")
     
+    # Always generate rule-based annotations (needed for both modes)
+    if language == 'python':
+        rule_annotated_lines = annotate_python(code, level)
+    elif language == 'java':
+        rule_annotated_lines = annotate_java(code, level)
+    else:
+        rule_annotated_lines = []
+    
     # AI-powered mode
     if mode == 'ai':
         result = generate_annotated_code_ai(code, language, level)
         return render_template('result.html', 
                              annotated_lines=result['lines'],
+                             rule_annotated_lines=rule_annotated_lines,
                              ai_explanation=result['explanation'],
                              language=language,
                              level=level,
@@ -32,15 +41,9 @@ def explain():
                              code=code)
     
     # Rule-based mode (default)
-    if language == 'python':
-        annotated_lines = annotate_python(code, level)
-    elif language == 'java':
-        annotated_lines = annotate_java(code, level)
-    else:
-        annotated_lines = []
-    
     return render_template('result.html', 
-                         annotated_lines=annotated_lines,
+                         annotated_lines=rule_annotated_lines,
+                         rule_annotated_lines=rule_annotated_lines,
                          language=language,
                          level=level,
                          mode=mode,
