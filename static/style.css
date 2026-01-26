@@ -241,6 +241,7 @@ footer a {
 /* Mode badges */
 .badges {
     display: flex;
+    align-items: center;
     gap: 10px;
     margin-bottom: 20px;
 }
@@ -294,6 +295,50 @@ footer a {
 .mode-toggle {
     margin: 25px 0;
     text-align: center;
+}
+
+/* Mode Toggle Group (in badges area) */
+.mode-toggle-group {
+    display: inline-flex;
+    border: 1px solid #d0d0d0;
+    overflow: hidden;
+}
+
+.mode-toggle-btn {
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 500;
+    border: none;
+    background: white;
+    color: #666;
+    cursor: pointer;
+    transition: all 0.15s;
+    width: auto;
+    min-width: 70px;
+    text-align: center;
+}
+
+.mode-toggle-btn:first-child {
+    border-right: 1px solid #d0d0d0;
+}
+
+.mode-toggle-btn:hover:not(.active) {
+    background: #f5f5f5;
+}
+
+.mode-toggle-btn.active {
+    background: #111;
+    color: white;
+}
+
+.mode-toggle-btn.loading {
+    opacity: 0.7;
+    cursor: wait;
+}
+
+.mode-toggle-btn .btn-text,
+.mode-toggle-btn .btn-loading {
+    display: inline;
 }
 
 .toggle-btn {
