@@ -38,6 +38,27 @@
         </div>
         {% endif %}
         
+        <!-- Mode toggle button -->
+        <div class="mode-toggle">
+            {% if mode == 'rule-based' %}
+            <form method="POST" action="/explain">
+                <input type="hidden" name="code" value="{{ code }}">
+                <input type="hidden" name="language" value="{{ language }}">
+                <input type="hidden" name="level" value="{{ level }}">
+                <input type="hidden" name="mode" value="ai">
+                <button type="submit" class="toggle-btn ai-btn">🤖 Switch to AI-Powered Explanation</button>
+            </form>
+            {% else %}
+            <form method="POST" action="/explain">
+                <input type="hidden" name="code" value="{{ code }}">
+                <input type="hidden" name="language" value="{{ language }}">
+                <input type="hidden" name="level" value="{{ level }}">
+                <input type="hidden" name="mode" value="rule-based">
+                <button type="submit" class="toggle-btn rule-btn">⚡ Switch to Rule-based Explanation</button>
+            </form>
+            {% endif %}
+        </div>
+        
         <a href="/" class="back-link">Explain Another Code</a>
     </div>
     <footer>

@@ -119,9 +119,15 @@ def generate_annotated_code_ai(code, language, level):
         # Escape HTML in the line content
         escaped_line = html.escape(line)
         
-        # If we have an explanation, wrap the entire line in a highlight span
+        # If we have an explanation, wrap only the code part (not leading whitespace)
         if explanation and line.strip():
-            highlighted = f'<span class="ai-line-highlight" data-tooltip="{html.escape(explanation)}">{escaped_line}</span>'
+            # Separate leading whitespace from code
+            stripped = line.lstrip()
+            leading_spaces = line[:len(line) - len(stripped)]
+            escaped_leading = html.escape(leading_spaces)
+            escaped_code = html.escape(stripped)
+            
+            highlighted = f'{escaped_leading}<span class="ai-line-highlight" data-tooltip="{html.escape(explanation)}">{escaped_code}</span>'
             has_highlights = True
         else:
             highlighted = escaped_line

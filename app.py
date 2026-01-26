@@ -28,7 +28,8 @@ def explain():
                              ai_explanation=result['explanation'],
                              language=language,
                              level=level,
-                             mode=mode)
+                             mode=mode,
+                             code=code)
     
     # Rule-based mode (default)
     if language == 'python':
@@ -42,7 +43,8 @@ def explain():
                          annotated_lines=annotated_lines,
                          language=language,
                          level=level,
-                         mode=mode)
+                         mode=mode,
+                         code=code)
 
 if __name__ == '__main__':
     import os

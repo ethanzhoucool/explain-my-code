@@ -289,3 +289,39 @@ footer a {
 .ai-line-highlight:hover {
     background-color: rgba(97, 175, 239, 0.15);
 }
+
+/* Mode Toggle */
+.mode-toggle {
+    margin: 25px 0;
+    text-align: center;
+}
+
+.toggle-btn {
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 500;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.ai-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.ai-btn:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+}
+
+.rule-btn {
+    background: #f0f0f0;
+    color: #333;
+    border: 1px solid #d0d0d0;
+}
+
+.rule-btn:hover {
+    background: #e5e5e5;
+}
