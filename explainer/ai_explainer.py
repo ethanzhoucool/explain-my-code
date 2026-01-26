@@ -27,7 +27,8 @@ def explain_with_ai(code, language, level):
         return "Error: GEMINI_API_KEY environment variable is not set."
     
     try:
-        model = genai.GenerativeModel('gemini-pro')
+        # Use gemini-1.5-flash (current model name)
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
         level_prompt = get_level_prompt(level)
         
@@ -53,18 +54,30 @@ Provide a clear explanation of what this code does. If there are multiple parts,
 
 def generate_annotated_code_ai(code, language, level):
     """
-    Generates line-by-line code display with AI explanation.
-    Returns a dict with lines and the AI explanation.
+    Generates line-by-line code display with keyword highlighting AND AI explanation.
+    Returns a dict with highlighted lines and the AI explanation.
     """
+    # Import the rule-based highlighters to reuse their highlighting
+    from explainer.python_rules import build_highlighted_line as python_highlight
+    from explainer.java_rules import build_highlighted_line as java_highlight
+    
     lines = code.split('\n')
     annotated = []
     
     for i, line in enumerate(lines, 1):
+        # Apply keyword highlighting based on language
+        if language == 'python':
+            highlighted_line, has_highlights = python_highlight(line, level)
+        elif language == 'java':
+            highlighted_line, has_highlights = java_highlight(line, level)
+        else:
+            highlighted_line, has_highlights = line, False
+        
         annotated.append({
             'number': i,
             'code': line,
-            'highlighted': line,  # No highlighting in AI mode
-            'has_highlights': False
+            'highlighted': highlighted_line,
+            'has_highlights': has_highlights
         })
     
     # Get the AI explanation

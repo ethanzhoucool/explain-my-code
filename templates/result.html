@@ -16,9 +16,7 @@
         </div>
         
         <h2>{{ language|title }} Code</h2>
-        {% if mode == 'rule-based' %}
         <p class="instruction">Hover over highlighted keywords for explanations</p>
-        {% endif %}
         
         <div class="code-container">
             {% for line in annotated_lines %}
@@ -41,9 +39,7 @@
     <footer>
         Built by Ethan Zhou | <a href="https://github.com/ethanzhoucool/explain-my-code">View on GitHub</a>
     </footer>
-    {% if mode == 'rule-based' %}
-    <!-- Only load JavaScript for rule-based mode (tooltips) -->
+    <!-- Load JavaScript for tooltips (both modes now have highlighting) -->
     <script src="{{ url_for('static', filename='script.js') }}"></script>
-    {% endif %}
 </body>
 </html>
