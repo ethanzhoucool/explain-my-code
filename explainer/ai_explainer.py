@@ -27,8 +27,8 @@ def explain_with_ai(code, language, level):
         return "Error: GEMINI_API_KEY environment variable is not set."
     
     try:
-        # Use gemini-1.5-flash (current model name)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Use gemini-2.0-flash (latest model)
+        model = genai.GenerativeModel('gemini-2.0-flash')
         
         level_prompt = get_level_prompt(level)
         
