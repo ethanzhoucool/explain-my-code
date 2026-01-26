@@ -39,20 +39,6 @@ python3 app.py
 
 Open your browser at: http://127.0.0.1:5000
 
-## Deploying to Render (already deployed)
-
-This repository is configured for Render using a `Procfile`, `requirements.txt`, and `runtime.txt`.
-
-If you want to (re)deploy or connect a fork:
-
-1. Push your repository to GitHub
-2. Create a new Web Service in Render and connect the repo
-3. Use the `main` branch, build command `pip install -r requirements.txt`, and start command `gunicorn app:app`
-
-The live URL for this deployment is:
-
-https://explain-my-code-w3sj.onrender.com
-
 ## Project structure
 
 ```

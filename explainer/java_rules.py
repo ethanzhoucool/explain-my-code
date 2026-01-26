@@ -379,6 +379,11 @@ def build_highlighted_line(line, level):
     """
     Builds HTML with highlighted keywords and tooltips.
     """
+    # Skip lines that are comments (only show the line, no keyword highlighting)
+    stripped = line.strip()
+    if stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('*'):
+        return line, False
+    
     features = detect_features_in_line(line)
     
     if not features:

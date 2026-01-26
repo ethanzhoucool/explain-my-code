@@ -1,4 +1,22 @@
 document.addEventListener('DOMContentLoaded', function() {
+    // Handle Tab key in textarea for code input
+    const codeTextarea = document.getElementById('code');
+    if (codeTextarea) {
+        codeTextarea.addEventListener('keydown', function(e) {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = this.selectionStart;
+                const end = this.selectionEnd;
+                
+                // Insert 4 spaces at cursor position
+                this.value = this.value.substring(0, start) + '    ' + this.value.substring(end);
+                
+                // Move cursor after the inserted spaces
+                this.selectionStart = this.selectionEnd = start + 4;
+            }
+        });
+    }
+
     // Handle example buttons
     const exampleButtons = document.querySelectorAll('.example-btn');
     exampleButtons.forEach(button => {
