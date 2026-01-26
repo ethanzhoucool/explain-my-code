@@ -16,7 +16,11 @@
         </div>
         
         <h2>{{ language|title }} Code</h2>
+        {% if mode == 'ai' %}
+        <p class="instruction">Hover over each line for AI-generated explanations</p>
+        {% else %}
         <p class="instruction">Hover over highlighted keywords for explanations</p>
+        {% endif %}
         
         <div class="code-container">
             {% for line in annotated_lines %}
@@ -28,7 +32,7 @@
         </div>
         
         {% if mode == 'ai' and ai_explanation %}
-        <h2>AI Explanation</h2>
+        <h2>Summary</h2>
         <div class="ai-explanation-box">
             {{ ai_explanation }}
         </div>

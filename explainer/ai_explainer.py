@@ -1,4 +1,7 @@
 import os
+import json
+import re
+import html
 import google.generativeai as genai
 
 # Configure API key from environment variable
@@ -12,78 +15,107 @@ def configure_api():
 def get_level_prompt(level):
     """Returns the appropriate prompt based on explanation level."""
     prompts = {
-        'eli5': "Explain this code like I'm 5 years old. Use simple language and fun analogies.",
-        'beginner': "Explain this code for a beginner programmer. Be clear but technical.",
-        'developer': "Explain this code for an experienced developer. Be precise and technical."
+        'eli5': "like I'm 5 years old, using simple words and fun analogies",
+        'beginner': "for a beginner programmer, being clear but somewhat technical",
+        'developer': "for an experienced developer, being precise and technical"
     }
     return prompts.get(level, prompts['beginner'])
 
-def explain_with_ai(code, language, level):
+def get_line_explanations(code, language, level):
     """
-    Uses Gemini AI to explain the provided code.
-    Returns a string explanation or an error message.
+    Uses Gemini AI to get explanations for each line of code.
+    Returns a dict mapping line numbers to explanations.
     """
     if not configure_api():
-        return "Error: GEMINI_API_KEY environment variable is not set."
+        return {}, "Error: GEMINI_API_KEY environment variable is not set."
     
     try:
-        # Use gemini-2.0-flash (latest model)
         model = genai.GenerativeModel('gemini-2.0-flash')
         
-        level_prompt = get_level_prompt(level)
+        level_desc = get_level_prompt(level)
+        lines = code.split('\n')
+        numbered_code = '\n'.join([f"{i+1}: {line}" for i, line in enumerate(lines)])
         
-        prompt = f"""You are a helpful coding teacher. {level_prompt}
+        prompt = f"""You are a coding teacher. Analyze this {language} code and provide:
 
-Here is {language} code to explain:
+1. A brief explanation for EACH line (explain {level_desc})
+2. An overall summary of what the entire code does
 
-```{language}
-{code}
-```
+Code (with line numbers):
+{numbered_code}
 
-Provide a clear explanation of what this code does. If there are multiple parts, explain each one. Format your response nicely with line breaks between sections."""
+IMPORTANT: Respond in this exact JSON format:
+{{
+  "lines": {{
+    "1": "explanation for line 1",
+    "2": "explanation for line 2"
+  }},
+  "summary": "Overall summary of what the code does"
+}}
+
+Rules:
+- For blank lines or just closing braces/brackets, use "Empty line" or "Closes the block"
+- Keep each line explanation SHORT (1 sentence, under 100 characters)
+- The summary should be 2-3 sentences
+- Return ONLY valid JSON, no markdown"""
 
         response = model.generate_content(prompt)
         
         if response and response.text:
-            return response.text
+            # Clean the response - remove markdown code blocks if present
+            text = response.text.strip()
+            if text.startswith('```'):
+                text = re.sub(r'^```\w*\n?', '', text)
+                text = re.sub(r'\n?```$', '', text)
+            
+            try:
+                data = json.loads(text)
+                line_explanations = {int(k): v for k, v in data.get('lines', {}).items()}
+                summary = data.get('summary', 'No summary available.')
+                return line_explanations, summary
+            except json.JSONDecodeError:
+                # Fallback if JSON parsing fails
+                return {}, response.text
         else:
-            return "Error: No response received from AI. Please try again."
+            return {}, "Error: No response received from AI."
             
     except Exception as e:
-        return f"Error: Could not get AI explanation. {str(e)}"
+        return {}, f"Error: Could not get AI explanation. {str(e)}"
 
 def generate_annotated_code_ai(code, language, level):
     """
-    Generates line-by-line code display with keyword highlighting AND AI explanation.
-    Returns a dict with highlighted lines and the AI explanation.
+    Generates line-by-line code display with AI-generated tooltips for each line.
+    Returns a dict with annotated lines and overall summary.
     """
-    # Import the rule-based highlighters to reuse their highlighting
-    from explainer.python_rules import build_highlighted_line as python_highlight
-    from explainer.java_rules import build_highlighted_line as java_highlight
-    
     lines = code.split('\n')
-    annotated = []
     
+    # Get AI explanations for each line
+    line_explanations, summary = get_line_explanations(code, language, level)
+    
+    annotated = []
     for i, line in enumerate(lines, 1):
-        # Apply keyword highlighting based on language
-        if language == 'python':
-            highlighted_line, has_highlights = python_highlight(line, level)
-        elif language == 'java':
-            highlighted_line, has_highlights = java_highlight(line, level)
+        # Get the AI explanation for this line
+        explanation = line_explanations.get(i, "")
+        
+        # Escape HTML in the line content
+        escaped_line = html.escape(line)
+        
+        # If we have an explanation, wrap the entire line in a highlight span
+        if explanation and line.strip():
+            highlighted = f'<span class="ai-line-highlight" data-tooltip="{html.escape(explanation)}">{escaped_line}</span>'
+            has_highlights = True
         else:
-            highlighted_line, has_highlights = line, False
+            highlighted = escaped_line
+            has_highlights = False
         
         annotated.append({
             'number': i,
             'code': line,
-            'highlighted': highlighted_line,
+            'highlighted': highlighted,
             'has_highlights': has_highlights
         })
     
-    # Get the AI explanation
-    ai_explanation = explain_with_ai(code, language, level)
-    
     return {
         'lines': annotated,
-        'explanation': ai_explanation
+        'explanation': summary
     }

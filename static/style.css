@@ -277,3 +277,15 @@ footer a {
     color: #333;
     border-radius: 0 4px 4px 0;
 }
+
+/* AI Line Highlighting */
+.ai-line-highlight {
+    cursor: help;
+    display: inline;
+    border-bottom: 1px dashed #61afef;
+    transition: background-color 0.2s;
+}
+
+.ai-line-highlight:hover {
+    background-color: rgba(97, 175, 239, 0.15);
+}

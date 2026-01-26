@@ -26,33 +26,43 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Handle highlights for tooltips (if on result page)
+    // Handle highlights for tooltips (rule-based mode)
     const highlights = document.querySelectorAll('.highlight');
     highlights.forEach(highlight => {
-        // Create tooltip element
-        const tooltip = document.createElement('div');
-        tooltip.className = 'custom-tooltip';
-        tooltip.textContent = highlight.getAttribute('data-tooltip');
-        document.body.appendChild(tooltip);
-        
-        // Show tooltip on hover
-        highlight.addEventListener('mouseenter', function(e) {
-            const rect = highlight.getBoundingClientRect();
-            
-            // Position tooltip below the highlight
-            tooltip.style.left = rect.left + (rect.width / 2) + 'px';
-            tooltip.style.top = rect.bottom + 8 + window.scrollY + 'px';
-            tooltip.style.opacity = '1';
-            tooltip.style.visibility = 'visible';
-        });
-        
-        // Hide tooltip on mouse leave
-        highlight.addEventListener('mouseleave', function() {
-            tooltip.style.opacity = '0';
-            tooltip.style.visibility = 'hidden';
-        });
+        setupTooltip(highlight);
+    });
+
+    // Handle AI line highlights (AI mode)
+    const aiHighlights = document.querySelectorAll('.ai-line-highlight');
+    aiHighlights.forEach(highlight => {
+        setupTooltip(highlight);
     });
 });
+
+function setupTooltip(element) {
+    // Create tooltip element
+    const tooltip = document.createElement('div');
+    tooltip.className = 'custom-tooltip';
+    tooltip.textContent = element.getAttribute('data-tooltip');
+    document.body.appendChild(tooltip);
+    
+    // Show tooltip on hover
+    element.addEventListener('mouseenter', function(e) {
+        const rect = element.getBoundingClientRect();
+        
+        // Position tooltip below the element
+        tooltip.style.left = rect.left + (rect.width / 2) + 'px';
+        tooltip.style.top = rect.bottom + 8 + window.scrollY + 'px';
+        tooltip.style.opacity = '1';
+        tooltip.style.visibility = 'visible';
+    });
+    
+    // Hide tooltip on mouse leave
+    element.addEventListener('mouseleave', function() {
+        tooltip.style.opacity = '0';
+        tooltip.style.visibility = 'hidden';
+    });
+}
 
 function loadExample(lang) {
     const pythonExample = `for i in range(5):
