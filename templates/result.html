@@ -1,6 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Code Explanation</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
@@ -8,26 +10,16 @@
     <div class="container">
         <h1>Code Explanation</h1>
         
-        <div class="badges">
+        <div class="header-row">
             <span class="level-badge">{{ level|replace('_', ' ')|title }}</span>
-            <!-- Toggle switch for mode -->
             <div class="mode-toggle-group">
-                <button type="button" class="mode-toggle-btn {% if mode == 'rule-based' %}active{% endif %}" id="ruleBtn">
-                    Rule-based
-                </button>
-                <button type="button" class="mode-toggle-btn {% if mode == 'ai' %}active{% endif %}" id="aiBtn">
-                    <span class="btn-text">AI Mode</span>
-                    <span class="btn-loading" style="display:none;">⏳</span>
-                </button>
+                <button type="button" class="mode-toggle-btn {% if mode != 'ai' %}active{% endif %}" id="ruleBtn">Rules</button>
+                <button type="button" class="mode-toggle-btn {% if mode == 'ai' %}active{% endif %}" id="aiBtn">AI</button>
             </div>
         </div>
         
         <h2>{{ language|title }} Code</h2>
-        {% if mode == 'ai' %}
-        <p class="instruction">Hover over each line for AI-generated explanations</p>
-        {% else %}
-        <p class="instruction">Hover over highlighted keywords for explanations</p>
-        {% endif %}
+        <p class="instruction" id="instruction">{% if mode == 'ai' %}Hover over each line for AI-generated explanations{% else %}Hover over highlighted keywords for explanations{% endif %}</p>
         
         <!-- Rule-based content -->
         <div id="rule-content" style="{% if mode == 'ai' %}display:none;{% endif %}">
@@ -77,66 +69,49 @@
     
     <script src="{{ url_for('static', filename='script.js') }}"></script>
     <script>
-        // Store current mode and AI cache status
         let currentMode = '{{ mode }}';
-        let aiLoaded = {% if mode == 'ai' %}true{% else %}false{% endif %};
+        let aiLoaded = {{ 'true' if mode == 'ai' else 'false' }};
         let aiContentCache = null;
         
         const ruleBtn = document.getElementById('ruleBtn');
         const aiBtn = document.getElementById('aiBtn');
-        const instruction = document.querySelector('.instruction');
+        const instruction = document.getElementById('instruction');
         
-        {% if mode == 'ai' %}
-        // Cache the AI content if we're already in AI mode
-        aiContentCache = document.getElementById('ai-content').innerHTML;
-        {% endif %}
+        if (currentMode === 'ai') {
+            aiContentCache = document.getElementById('ai-content').innerHTML;
+        }
         
-        // Rule-based button click
         ruleBtn.addEventListener('click', function() {
             if (currentMode === 'rule-based') return;
             
-            // Cache AI content before switching
             if (currentMode === 'ai' && !aiContentCache) {
                 aiContentCache = document.getElementById('ai-content').innerHTML;
             }
             if (currentMode === 'ai') aiLoaded = true;
             
-            // Switch views
             document.getElementById('ai-content').style.display = 'none';
             document.getElementById('rule-content').style.display = 'block';
-            
-            // Update buttons
             ruleBtn.classList.add('active');
             aiBtn.classList.remove('active');
             instruction.textContent = 'Hover over highlighted keywords for explanations';
-            
             currentMode = 'rule-based';
             setupRuleTooltips();
         });
         
-        // AI button click
         aiBtn.addEventListener('click', function() {
             if (currentMode === 'ai') return;
             
             if (aiLoaded && aiContentCache) {
-                // Use cached AI content
                 document.getElementById('ai-content').innerHTML = aiContentCache;
                 document.getElementById('ai-content').style.display = 'block';
                 document.getElementById('rule-content').style.display = 'none';
-                
-                // Update buttons
                 aiBtn.classList.add('active');
                 ruleBtn.classList.remove('active');
                 instruction.textContent = 'Hover over each line for AI-generated explanations';
-                
                 currentMode = 'ai';
                 setupAITooltips();
             } else {
-                // Show loading state and submit form
-                const btnText = aiBtn.querySelector('.btn-text');
-                const btnLoading = aiBtn.querySelector('.btn-loading');
-                btnText.style.display = 'none';
-                btnLoading.style.display = 'inline';
+                aiBtn.textContent = '...';
                 aiBtn.disabled = true;
                 aiBtn.classList.add('loading');
                 document.getElementById('aiForm').submit();
@@ -144,21 +119,19 @@
         });
         
         function setupAITooltips() {
-            const aiHighlights = document.querySelectorAll('#ai-content .ai-line-highlight');
-            aiHighlights.forEach(highlight => {
-                if (!highlight.dataset.tooltipSetup) {
-                    setupTooltip(highlight);
-                    highlight.dataset.tooltipSetup = 'true';
+            document.querySelectorAll('#ai-content .ai-line-highlight').forEach(el => {
+                if (!el.dataset.tooltipSetup) {
+                    setupTooltip(el);
+                    el.dataset.tooltipSetup = 'true';
                 }
             });
         }
         
         function setupRuleTooltips() {
-            const highlights = document.querySelectorAll('#rule-content .highlight');
-            highlights.forEach(highlight => {
-                if (!highlight.dataset.tooltipSetup) {
-                    setupTooltip(highlight);
-                    highlight.dataset.tooltipSetup = 'true';
+            document.querySelectorAll('#rule-content .highlight').forEach(el => {
+                if (!el.dataset.tooltipSetup) {
+                    setupTooltip(el);
+                    el.dataset.tooltipSetup = 'true';
                 }
             });
         }
