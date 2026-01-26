@@ -2,6 +2,7 @@ import os
 import json
 import re
 import html
+import time
 import google.generativeai as genai
 
 # Configure API key from environment variable
@@ -25,18 +26,24 @@ def get_line_explanations(code, language, level):
     """
     Uses Gemini AI to get explanations for each line of code.
     Returns a dict mapping line numbers to explanations.
+    Includes retry logic for rate limiting.
     """
     if not configure_api():
         return {}, "Error: GEMINI_API_KEY environment variable is not set."
     
-    try:
-        model = genai.GenerativeModel('gemini-2.0-flash')
-        
-        level_desc = get_level_prompt(level)
-        lines = code.split('\n')
-        numbered_code = '\n'.join([f"{i+1}: {line}" for i, line in enumerate(lines)])
-        
-        prompt = f"""You are a coding teacher. Analyze this {language} code and provide:
+    # Retry configuration
+    max_retries = 3
+    retry_delay = 2  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            model = genai.GenerativeModel('gemini-2.0-flash')
+            
+            level_desc = get_level_prompt(level)
+            lines = code.split('\n')
+            numbered_code = '\n'.join([f"{i+1}: {line}" for i, line in enumerate(lines)])
+            
+            prompt = f"""You are a coding teacher. Analyze this {language} code and provide:
 
 1. A brief explanation for EACH line (explain {level_desc})
 2. An overall summary of what the entire code does
@@ -59,28 +66,40 @@ Rules:
 - The summary should be 2-3 sentences
 - Return ONLY valid JSON, no markdown"""
 
-        response = model.generate_content(prompt)
-        
-        if response and response.text:
-            # Clean the response - remove markdown code blocks if present
-            text = response.text.strip()
-            if text.startswith('```'):
-                text = re.sub(r'^```\w*\n?', '', text)
-                text = re.sub(r'\n?```$', '', text)
+            response = model.generate_content(prompt)
             
-            try:
-                data = json.loads(text)
-                line_explanations = {int(k): v for k, v in data.get('lines', {}).items()}
-                summary = data.get('summary', 'No summary available.')
-                return line_explanations, summary
-            except json.JSONDecodeError:
-                # Fallback if JSON parsing fails
-                return {}, response.text
-        else:
-            return {}, "Error: No response received from AI."
-            
-    except Exception as e:
-        return {}, f"Error: Could not get AI explanation. {str(e)}"
+            if response and response.text:
+                # Clean the response - remove markdown code blocks if present
+                text = response.text.strip()
+                if text.startswith('```'):
+                    text = re.sub(r'^```\w*\n?', '', text)
+                    text = re.sub(r'\n?```$', '', text)
+                
+                try:
+                    data = json.loads(text)
+                    line_explanations = {int(k): v for k, v in data.get('lines', {}).items()}
+                    summary = data.get('summary', 'No summary available.')
+                    return line_explanations, summary
+                except json.JSONDecodeError:
+                    # Fallback if JSON parsing fails
+                    return {}, response.text
+            else:
+                return {}, "Error: No response received from AI."
+                
+        except Exception as e:
+            error_str = str(e)
+            # Check if it's a rate limit error (429)
+            if '429' in error_str or 'Resource exhausted' in error_str:
+                if attempt < max_retries - 1:
+                    # Wait and retry
+                    time.sleep(retry_delay * (attempt + 1))  # Exponential backoff
+                    continue
+                else:
+                    return {}, "The AI service is busy. Please wait a moment and try again."
+            else:
+                return {}, f"Error: Could not get AI explanation. {error_str}"
+    
+    return {}, "Error: Failed after multiple attempts. Please try again later."
 
 def generate_annotated_code_ai(code, language, level):
     """
