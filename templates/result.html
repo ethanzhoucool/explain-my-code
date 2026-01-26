@@ -8,10 +8,17 @@
     <div class="container">
         <h1>Code Explanation</h1>
         
-        <span class="level-badge">{{ level|replace('_', ' ')|title }} Mode</span>
+        <div class="badges">
+            <span class="level-badge">{{ level|replace('_', ' ')|title }} Mode</span>
+            <span class="mode-badge {% if mode == 'ai' %}mode-ai{% else %}mode-rule{% endif %}">
+                {% if mode == 'ai' %}🤖 AI-Powered{% else %}⚡ Rule-based{% endif %}
+            </span>
+        </div>
         
         <h2>{{ language|title }} Code</h2>
+        {% if mode == 'rule-based' %}
         <p class="instruction">Hover over highlighted keywords for explanations</p>
+        {% endif %}
         
         <div class="code-container">
             {% for line in annotated_lines %}
@@ -22,12 +29,21 @@
             {% endfor %}
         </div>
         
+        {% if mode == 'ai' and ai_explanation %}
+        <h2>AI Explanation</h2>
+        <div class="ai-explanation-box">
+            {{ ai_explanation }}
+        </div>
+        {% endif %}
+        
         <a href="/" class="back-link">Explain Another Code</a>
     </div>
     <footer>
         Built by Ethan Zhou | <a href="https://github.com/ethanzhoucool/explain-my-code">View on GitHub</a>
     </footer>
-    <!-- Add JavaScript -->
+    {% if mode == 'rule-based' %}
+    <!-- Only load JavaScript for rule-based mode (tooltips) -->
     <script src="{{ url_for('static', filename='script.js') }}"></script>
+    {% endif %}
 </body>
 </html>

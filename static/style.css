@@ -237,3 +237,43 @@ footer {
 footer a {
     color: #666;
 }
+
+/* Mode badges */
+.badges {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.mode-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: 4px;
+}
+
+.mode-ai {
+    background: #e8f4fd;
+    border: 1px solid #61afef;
+    color: #1a73e8;
+}
+
+.mode-rule {
+    background: #f0f0f0;
+    border: 1px solid #d0d0d0;
+    color: #555;
+}
+
+/* AI Explanation Box */
+.ai-explanation-box {
+    background: #f8f9fa;
+    border-left: 4px solid #61afef;
+    padding: 20px;
+    margin: 20px 0;
+    line-height: 1.7;
+    font-size: 14px;
+    white-space: pre-wrap;
+    color: #333;
+    border-radius: 0 4px 4px 0;
+}
