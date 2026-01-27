@@ -83,6 +83,20 @@ function loadExample(lang) {
 const numbers = [1, 2, 3, 4, 5];
 const doubled = numbers.map(n => n * 2);
 console.log(doubled);`;
+
+    const cppExample = `#include <iostream>
+#include <vector>
+using namespace std;
+
+int main() {
+    vector<int> numbers = {1, 2, 3, 4, 5};
+    
+    for (int num : numbers) {
+        cout << num << endl;
+    }
+    
+    return 0;
+}`;
     
     if (lang === 'python') {
         document.getElementById('code').value = pythonExample;
@@ -93,5 +107,8 @@ console.log(doubled);`;
     } else if (lang === 'javascript') {
         document.getElementById('code').value = javascriptExample;
         document.getElementById('language').value = 'javascript';
+    } else if (lang === 'cpp') {
+        document.getElementById('code').value = cppExample;
+        document.getElementById('language').value = 'cpp';
     }
 }

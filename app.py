@@ -2,6 +2,7 @@ from flask import Flask, render_template, request
 from explainer.python_rules import generate_annotated_code as annotate_python
 from explainer.java_rules import generate_annotated_code as annotate_java
 from explainer.javascript_rules import generate_annotated_code as annotate_javascript
+from explainer.cpp_rules import generate_annotated_code as annotate_cpp
 from explainer.ai_explainer import generate_annotated_code_ai
 
 app = Flask(__name__)
@@ -28,6 +29,8 @@ def explain():
         rule_annotated_lines = annotate_java(code, level)
     elif language == 'javascript':
         rule_annotated_lines = annotate_javascript(code, level)
+    elif language == 'cpp':
+        rule_annotated_lines = annotate_cpp(code, level)
     else:
         rule_annotated_lines = []
     
