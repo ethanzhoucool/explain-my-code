@@ -97,6 +97,20 @@ int main() {
     
     return 0;
 }`;
+
+    const sqlExample = `SELECT 
+    e.name,
+    e.department,
+    COUNT(o.order_id) AS total_orders,
+    SUM(o.amount) AS total_sales
+FROM employees e
+LEFT JOIN orders o ON e.id = o.employee_id
+WHERE e.status = 'active'
+    AND o.order_date BETWEEN '2024-01-01' AND '2024-12-31'
+GROUP BY e.name, e.department
+HAVING SUM(o.amount) > 10000
+ORDER BY total_sales DESC
+LIMIT 10;`;
     
     if (lang === 'python') {
         document.getElementById('code').value = pythonExample;
@@ -110,5 +124,8 @@ int main() {
     } else if (lang === 'cpp') {
         document.getElementById('code').value = cppExample;
         document.getElementById('language').value = 'cpp';
+    } else if (lang === 'sql') {
+        document.getElementById('code').value = sqlExample;
+        document.getElementById('language').value = 'sql';
     }
 }
