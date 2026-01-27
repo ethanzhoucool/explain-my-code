@@ -554,6 +554,13 @@ def detect_features_in_line(line):
     return features
 
 
+def html_escape(text):
+    """
+    Escape HTML special characters.
+    """
+    return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
 def build_highlighted_line(line, level):
     """
     Builds HTML with highlighted keywords and tooltips.
@@ -561,19 +568,19 @@ def build_highlighted_line(line, level):
     # Skip lines that are comments
     stripped = line.strip()
     if stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('*'):
-        return line, False
+        return html_escape(line), False
     
     features = detect_features_in_line(line)
     
     if not features:
-        return line, False
+        return html_escape(line), False
     
     result = []
     last_pos = 0
     
     for feature in features:
-        # Add text before the keyword
-        result.append(line[last_pos:feature['start']])
+        # Add text before the keyword (escaped)
+        result.append(html_escape(line[last_pos:feature['start']]))
         
         # Add highlighted keyword with tooltip
         keyword = feature['keyword']
@@ -584,14 +591,14 @@ def build_highlighted_line(line, level):
         if explanation:
             result.append(
                 f'<span class="highlight" style="background-color: {color}; color: white;" '
-                f'data-tooltip="{explanation}">{keyword}</span>'
+                f'data-tooltip="{explanation}">{html_escape(keyword)}</span>'
             )
         else:
-            result.append(keyword)
+            result.append(html_escape(keyword))
         
         last_pos = feature['end']
     
-    result.append(line[last_pos:])
+    result.append(html_escape(line[last_pos:]))
     
     return ''.join(result), True
 

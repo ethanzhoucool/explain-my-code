@@ -202,12 +202,15 @@ button:hover {
 
 .ai-line-highlight {
     cursor: help;
-    border-bottom: 1px dashed #61afef;
+    background-color: rgba(152, 195, 121, 0.15);
+    border-left: 2px solid #98c379;
+    padding-left: 4px;
+    margin-left: -6px;
     transition: background-color 0.2s;
 }
 
 .ai-line-highlight:hover {
-    background-color: rgba(97, 175, 239, 0.12);
+    background-color: rgba(152, 195, 121, 0.3);
 }
 
 .custom-tooltip {
