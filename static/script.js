@@ -73,12 +73,25 @@ function loadExample(lang) {
         System.out.println("Hello World!");
     }
 }`;
+
+    const javascriptExample = `async function fetchData() {
+    const response = await fetch('https://api.example.com/data');
+    const data = await response.json();
+    console.log(data);
+}
+
+const numbers = [1, 2, 3, 4, 5];
+const doubled = numbers.map(n => n * 2);
+console.log(doubled);`;
     
     if (lang === 'python') {
         document.getElementById('code').value = pythonExample;
         document.getElementById('language').value = 'python';
-    } else {
+    } else if (lang === 'java') {
         document.getElementById('code').value = javaExample;
         document.getElementById('language').value = 'java';
+    } else if (lang === 'javascript') {
+        document.getElementById('code').value = javascriptExample;
+        document.getElementById('language').value = 'javascript';
     }
 }
