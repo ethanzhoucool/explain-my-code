@@ -246,6 +246,61 @@ button:hover {
     color: #444;
 }
 
+.ai-explanation-box strong {
+    color: #333;
+    font-weight: 600;
+}
+
+.ai-explanation-box code {
+    background: #e9ecef;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+    font-size: 13px;
+    color: #d63384;
+}
+
+.ai-explanation-box .arrow {
+    color: #61afef;
+    font-weight: bold;
+    padding: 0 4px;
+}
+
+.ai-explanation-box .ai-list {
+    margin: 10px 0;
+    padding-left: 20px;
+    list-style: none;
+}
+
+.ai-explanation-box .ai-list li {
+    position: relative;
+    padding-left: 15px;
+    margin-bottom: 8px;
+}
+
+.ai-explanation-box .ai-list li::before {
+    content: "•";
+    position: absolute;
+    left: 0;
+    color: #61afef;
+    font-weight: bold;
+}
+
+.ai-explanation-box .summary-conclusion {
+    margin-top: 15px;
+    font-weight: 500;
+    color: #333;
+}
+
+.ai-explanation-box .summary-quote {
+    background: #fff;
+    border-left: 3px solid #98c379;
+    padding: 12px 15px;
+    margin: 10px 0;
+    font-style: italic;
+    color: #555;
+}
+
 .back-link {
     display: inline-block;
     color: #111;

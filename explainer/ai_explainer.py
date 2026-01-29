@@ -22,6 +22,51 @@ def get_level_prompt(level):
     }
     return prompts.get(level, prompts['beginner'])
 
+def get_beginner_conversational_prompt(language, numbered_code):
+    """Returns a conversational, step-by-step prompt for beginner mode."""
+    return f"""You are a friendly coding teacher explaining {language} code to a beginner. 
+Provide a conversational, step-by-step explanation that feels like a helpful friend walking them through the code.
+
+Code (with line numbers):
+{numbered_code}
+
+IMPORTANT: Respond in this exact JSON format:
+{{
+  "lines": {{
+    "1": "explanation for line 1",
+    "2": "explanation for line 2"
+  }},
+  "summary": "Your conversational explanation here"
+}}
+
+For the "summary" field, write a conversational explanation following this format:
+
+**What is this code doing?**
+* `variable` → is a type that does X
+* `.method()` → does Y
+
+**Let's break it down step by step:**
+* First part → explanation
+* Second part → explanation
+
+**So this means:**
+"Plain English summary of what the whole code accomplishes"
+
+Guidelines for the summary:
+- Start sections with questions ("What is this doing?", "What happens here?")
+- Use bullet points (* format) to break down syntax
+- Explain each part with simple, friendly language
+- Use → arrows to show relationships between concepts
+- End with "So this means:" and a quoted plain English summary
+- Be conversational and friendly, not robotic
+- Assume they're learning, so explain WHY things work, not just WHAT they do
+
+For the "lines" field:
+- Keep each line explanation SHORT (1 sentence, under 100 characters)
+- For blank lines or just closing braces/brackets, use "Empty line" or "Closes the block"
+
+Return ONLY valid JSON, no markdown code blocks."""
+
 def get_line_explanations(code, language, level):
     """
     Uses Gemini AI to get explanations for each line of code.
@@ -37,13 +82,25 @@ def get_line_explanations(code, language, level):
     
     for attempt in range(max_retries):
         try:
-            model = genai.GenerativeModel('gemini-2.0-flash')
+            # Use different generation config for beginner mode (more conversational)
+            if level == 'beginner':
+                generation_config = {
+                    'temperature': 0.8,
+                    'top_p': 0.95
+                }
+                model = genai.GenerativeModel('gemini-2.0-flash', generation_config=generation_config)
+            else:
+                model = genai.GenerativeModel('gemini-2.0-flash')
             
             level_desc = get_level_prompt(level)
             lines = code.split('\n')
             numbered_code = '\n'.join([f"{i+1}: {line}" for i, line in enumerate(lines)])
             
-            prompt = f"""You are a coding teacher. Analyze this {language} code and provide:
+            # Use conversational prompt for beginner mode
+            if level == 'beginner':
+                prompt = get_beginner_conversational_prompt(language, numbered_code)
+            else:
+                prompt = f"""You are a coding teacher. Analyze this {language} code and provide:
 
 1. A brief explanation for EACH line (explain {level_desc})
 2. An overall summary of what the entire code does
