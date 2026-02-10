@@ -39,6 +39,10 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
+// Track the currently active tooltip for mobile dismissal
+let activeTooltip = null;
+let activeElement = null;
+
 function setupTooltip(element) {
     // Create tooltip element
     const tooltip = document.createElement('div');
@@ -46,23 +50,77 @@ function setupTooltip(element) {
     tooltip.textContent = element.getAttribute('data-tooltip');
     document.body.appendChild(tooltip);
     
-    // Show tooltip on hover
-    element.addEventListener('mouseenter', function(e) {
-        const rect = element.getBoundingClientRect();
+    function showTooltip() {
+        // Hide any previously active tooltip
+        if (activeTooltip && activeTooltip !== tooltip) {
+            activeTooltip.style.opacity = '0';
+            activeTooltip.style.visibility = 'hidden';
+            if (activeElement) {
+                activeElement.classList.remove('tooltip-active');
+            }
+        }
         
-        // Position tooltip below the element
-        tooltip.style.left = rect.left + (rect.width / 2) + 'px';
+        const rect = element.getBoundingClientRect();
+        const tooltipWidth = 280;
+        
+        // Calculate left position, keeping tooltip within viewport
+        let left = rect.left + (rect.width / 2);
+        const viewportWidth = window.innerWidth;
+        
+        // Clamp so tooltip doesn't go off-screen
+        if (left - tooltipWidth / 2 < 10) {
+            left = tooltipWidth / 2 + 10;
+        } else if (left + tooltipWidth / 2 > viewportWidth - 10) {
+            left = viewportWidth - tooltipWidth / 2 - 10;
+        }
+        
+        tooltip.style.left = left + 'px';
         tooltip.style.top = rect.bottom + 8 + window.scrollY + 'px';
         tooltip.style.opacity = '1';
         tooltip.style.visibility = 'visible';
-    });
+        
+        activeTooltip = tooltip;
+        activeElement = element;
+        element.classList.add('tooltip-active');
+    }
     
-    // Hide tooltip on mouse leave
-    element.addEventListener('mouseleave', function() {
+    function hideTooltip() {
         tooltip.style.opacity = '0';
         tooltip.style.visibility = 'hidden';
-    });
+        element.classList.remove('tooltip-active');
+        if (activeTooltip === tooltip) {
+            activeTooltip = null;
+            activeElement = null;
+        }
+    }
+    
+    // Desktop: show on hover
+    element.addEventListener('mouseenter', showTooltip);
+    element.addEventListener('mouseleave', hideTooltip);
+    
+    // Mobile: toggle on tap
+    element.addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (activeTooltip === tooltip && tooltip.style.opacity === '1') {
+            hideTooltip();
+        } else {
+            showTooltip();
+        }
+    }, { passive: false });
 }
+
+// Dismiss tooltip when tapping outside on mobile
+document.addEventListener('touchstart', function(e) {
+    if (activeTooltip && activeElement && !activeElement.contains(e.target)) {
+        activeTooltip.style.opacity = '0';
+        activeTooltip.style.visibility = 'hidden';
+        activeElement.classList.remove('tooltip-active');
+        activeTooltip = null;
+        activeElement = null;
+    }
+});
 
 function loadExample(lang) {
     const pythonExample = `for i in range(5):

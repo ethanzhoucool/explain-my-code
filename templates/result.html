@@ -19,7 +19,7 @@
         </div>
         
         <h2>{{ language|title }} Code</h2>
-        <p class="instruction" id="instruction">{% if mode == 'ai' %}Hover over each line for AI-generated explanations{% else %}Hover over highlighted keywords for explanations{% endif %}</p>
+        <p class="instruction" id="instruction">{% if mode == 'ai' %}Hover or tap each line for AI-generated explanations{% else %}Hover or tap highlighted keywords for explanations{% endif %}</p>
         
         <!-- Rule-based content -->
         <div id="rule-content" style="{% if mode == 'ai' %}display:none;{% endif %}">
@@ -93,7 +93,7 @@
             document.getElementById('rule-content').style.display = 'block';
             ruleBtn.classList.add('active');
             aiBtn.classList.remove('active');
-            instruction.textContent = 'Hover over highlighted keywords for explanations';
+            instruction.textContent = 'Hover or tap highlighted keywords for explanations';
             currentMode = 'rule-based';
             setupRuleTooltips();
         });
@@ -107,7 +107,7 @@
                 document.getElementById('rule-content').style.display = 'none';
                 aiBtn.classList.add('active');
                 ruleBtn.classList.remove('active');
-                instruction.textContent = 'Hover over each line for AI-generated explanations';
+                instruction.textContent = 'Hover or tap each line for AI-generated explanations';
                 currentMode = 'ai';
                 setupAITooltips();
             } else {
