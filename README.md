@@ -2,7 +2,7 @@
 
 A small web app that analyzes Python and Java source code and produces human-friendly, line-level explanations at three knowledge levels (ELI5, Beginner, Developer).
 
-Live demo: https://explain-my-code-w3sj.onrender.com
+Live demo: https://explain-my-code-w3sj.onrender.com (hosted on Render's free tier — first load may take 30–60s while the instance wakes up)
 
 ## Features
 
