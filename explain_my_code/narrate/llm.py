@@ -355,7 +355,9 @@ class GeminiProvider:
 
     name = "gemini"
     ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models"
-    DEFAULT_MODEL = "gemini-2.5-flash"
+    # An alias rather than a pinned version: pinning is what broke v1 when
+    # gemini-2.0-flash was shut down. Confirmed live against the production key.
+    DEFAULT_MODEL = "gemini-flash-latest"
     #: Preference order when recovering from a retired model.
     PREFERRED = ("flash-latest", "3.7-flash", "3.5-flash", "2.5-flash", "flash", "pro")
 
