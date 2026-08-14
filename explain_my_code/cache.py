@@ -54,7 +54,7 @@ class Cache:
             entry = self._entries.get(key)
             if entry is not None:
                 stored_at, value = entry
-                if now - stored_at <= self.ttl:
+                if now - stored_at < self.ttl:
                     self._entries.move_to_end(key)
                     self.hits += 1
                     return value
@@ -91,7 +91,7 @@ class Cache:
         if path is None or not path.exists():
             return None
         try:
-            if now - path.stat().st_mtime > self.ttl:
+            if now - path.stat().st_mtime >= self.ttl:
                 path.unlink(missing_ok=True)
                 return None
             return json.loads(path.read_text("utf-8"))

@@ -148,6 +148,9 @@ class LineExplanation:
     detail: str | None = None
     concepts: list[str] | None = None
     node_id: int | None = None
+    #: LLM insight for this line, kept beside the static text rather than replacing it.
+    ai: str | None = None
+    ai_confidence: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -162,31 +165,54 @@ class LineExplanation:
             out["concepts"] = self.concepts
         if self.node_id is not None:
             out["nodeId"] = self.node_id
+        if self.ai:
+            out["ai"] = self.ai
+            out["aiConfidence"] = self.ai_confidence
         return out
 
 
 def line_view(annotations: list[Annotation], level: Level) -> list[LineExplanation]:
-    """One explanation per line: the most significant construct starting there."""
+    """One explanation per line: the most significant construct starting there.
+
+    Static and LLM annotations are ranked separately and both survive. Ranking them
+    together would mean the static one always wins (an LLM annotation has no `Kind`
+    to score), which silently dropped every enriched line from this view.
+    """
     best: dict[int, Annotation] = {}
+    enriched: dict[int, Annotation] = {}
     for annotation in annotations:
         line = annotation.span.start_line
+        if annotation.source is Source.LLM:
+            current = enriched.get(line)
+            if current is None or annotation.confidence > current.confidence:
+                enriched[line] = annotation
+            continue
         current = best.get(line)
         if current is None or SIGNIFICANCE.get(annotation.kind, 0) > SIGNIFICANCE.get(
             current.kind, 0
         ):
             best[line] = annotation
-    return [
-        LineExplanation(
-            line=line,
-            text=annotation.text(level),
-            kind=annotation.kind,
-            source=annotation.source,
-            detail=annotation.detail,
-            concepts=annotation.concepts or None,
-            node_id=annotation.node_id,
+
+    out: list[LineExplanation] = []
+    for line in sorted(set(best) | set(enriched)):
+        static = best.get(line)
+        llm = enriched.get(line)
+        anchor = static or llm
+        assert anchor is not None
+        out.append(
+            LineExplanation(
+                line=line,
+                text=(static or llm).text(level) if static else "",
+                kind=anchor.kind,
+                source=static.source if static else Source.LLM,
+                detail=anchor.detail,
+                concepts=anchor.concepts or None,
+                node_id=anchor.node_id,
+                ai=llm.text(level) if llm else None,
+                ai_confidence=round(llm.confidence, 2) if llm else None,
+            )
         )
-        for line, annotation in sorted(best.items())
-    ]
+    return out
 
 
 # -- narrative summary ----------------------------------------------------------------

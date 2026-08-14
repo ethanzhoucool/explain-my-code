@@ -21,6 +21,7 @@ import contextlib
 import json
 import os
 import re
+import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -414,6 +415,14 @@ class GeminiProvider:
             raise EnrichmentError("GEMINI_API_KEY is not set")
 
         response = self._post(system, prompt, key, self.model)
+
+        # 503 ("high demand") and 429 are transient upstream states, not failures of
+        # this request. Retry a couple of times before giving up on the whole pass.
+        for attempt in range(2):
+            if response.status_code not in (429, 503):
+                break
+            time.sleep(1.5 * (attempt + 1))
+            response = self._post(system, prompt, key, self.model)
 
         if response.status_code == 404:
             # The configured model was retired. Find a live one and say which, so the

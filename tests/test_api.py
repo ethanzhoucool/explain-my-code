@@ -237,3 +237,42 @@ def test_merge_layers_llm_annotations_on_top():
     merged = merge(result.annotations, Enrichment(summary="s", annotations=extra))
     assert len(merged) == len(result.annotations) + 1
     assert any(a.source is Source.LLM for a in merged)
+
+
+def test_enriched_lines_survive_the_line_view():
+    """Regression: LLM annotations were ranked against static ones by Kind.
+
+    An LLM annotation has no Kind to score, so the static annotation always won and
+    every enriched line vanished from `lines` — the CLI's --enrich flag rendered
+    nothing and the API response looked unenriched.
+    """
+    from explain_my_code.core import explain as run
+    from explain_my_code.narrate.annotate import line_view
+    from explain_my_code.narrate.llm import _to_annotations
+
+    result = run(PY, level=Level.BEGINNER)
+    static_line = result.lines[0].line
+    llm = _to_annotations(
+        [{"line": static_line, "text": "adds two numbers for the caller", "confidence": 0.8}],
+        Level.BEGINNER,
+        PY,
+    )
+    merged = line_view([*result.annotations, *llm], Level.BEGINNER)
+    row = next(r for r in merged if r.line == static_line)
+    assert row.text, "static explanation must survive"
+    assert row.ai == "adds two numbers for the caller", "LLM insight must survive too"
+    assert row.ai_confidence == 0.8
+    assert "ai" in row.to_dict()
+
+
+def test_line_view_keeps_an_llm_only_line():
+    """An LLM annotation on a line with no static explanation still shows up."""
+    from explain_my_code.narrate.annotate import line_view
+    from explain_my_code.narrate.llm import _to_annotations
+
+    llm = _to_annotations([{"line": 2, "text": "off-by-one risk", "confidence": 0.4}],
+                          Level.BEGINNER, PY)
+    rows = line_view(llm, Level.BEGINNER)
+    assert [r.line for r in rows] == [2]
+    assert rows[0].ai == "off-by-one risk"
+    assert rows[0].source is Source.LLM

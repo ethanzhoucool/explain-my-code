@@ -69,6 +69,8 @@ class LineExplanationModel(BaseModel):
     detail: str | None = None
     concepts: list[str] | None = None
     nodeId: int | None = None
+    ai: str | None = None
+    aiConfidence: float | None = None
 
 
 class AnnotationModel(BaseModel):

@@ -21,7 +21,7 @@ from rich.text import Text
 
 from explain_my_code import __version__
 from explain_my_code.core import detect_language, explain, supported_languages
-from explain_my_code.ir import Language, Level, Source
+from explain_my_code.ir import Language, Level
 
 app = typer.Typer(
     name="emc",
@@ -160,12 +160,20 @@ def _render_terminal(result: Any, *, show_code: bool) -> None:
             )
             console.print(Text.assemble(marker, " ", gutter), code, sep="", end="")
             explanation = by_line.get(index)
-            if explanation:
-                tag = "[magenta]ai[/magenta]" if explanation.source is Source.LLM else ""
-                console.print(f"       [dim]↳[/dim] {escape(explanation.text)} {tag}")
+            if explanation and explanation.text:
+                console.print(f"       [dim]↳[/dim] {escape(explanation.text)}")
+            if explanation and explanation.ai:
+                pct = int((explanation.ai_confidence or 0) * 100)
+                console.print(
+                    f"       [magenta]↳ ai[/magenta] {escape(explanation.ai)} "
+                    f"[dim]({pct}%)[/dim]"
+                )
     else:
         for line in result.lines:
-            console.print(f"[dim]{line.line:>4}[/dim]  {escape(line.text)}")
+            if line.text:
+                console.print(f"[dim]{line.line:>4}[/dim]  {escape(line.text)}")
+            if line.ai:
+                console.print(f"[dim]{line.line:>4}[/dim]  [magenta]ai[/magenta] {escape(line.ai)}")
 
     _render_metrics(result)
     _render_concepts(result)
