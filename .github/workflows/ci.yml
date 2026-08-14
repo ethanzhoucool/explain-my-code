@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, v2-rebuild]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -32,8 +32,18 @@ jobs:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
 
+      # A venv, not `--system`: the runner's interpreter is externally managed, and
+      # `uv venv --python` is also what actually installs the matrix version.
       - name: Install
-        run: uv pip install --system -e ".[dev]"
+        run: |
+          uv venv --python ${{ matrix.python }}
+          uv pip install -e ".[dev]"
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Confirm the matrix version is the one under test
+        run: |
+          python -V
+          python -c "import sys; assert sys.version.startswith('${{ matrix.python }}'), sys.version"
 
       - name: Confirm every grammar loaded
         # A missing tree-sitter wheel degrades silently at runtime; fail loudly here.
@@ -62,7 +72,12 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - run: uv pip install --system -e ".[dev]"
+          cache-dependency-glob: pyproject.toml
+      - name: Install
+        run: |
+          uv venv --python 3.13
+          uv pip install -e ".[dev]"
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
       - name: Ruff
         run: ruff check explain_my_code tests
       - name: Mypy
@@ -77,7 +92,12 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - run: uv pip install --system -e ".[dev]"
+          cache-dependency-glob: pyproject.toml
+      - name: Install
+        run: |
+          uv venv --python 3.13
+          uv pip install -e ".[dev]"
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Boot the server and exercise the public endpoints
         run: |
