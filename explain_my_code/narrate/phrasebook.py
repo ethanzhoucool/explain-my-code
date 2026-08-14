@@ -7,7 +7,7 @@ A template is `(Kind, Level) -> str`, filled from `node.meta`, so `for x in xs`,
 Rules for writing templates:
   * ELI5 uses an everyday image and no jargon. It may be loose, never wrong.
   * BEGINNER names the construct and says what it does with these specific values.
-  * DEVELOPER assumes the construct is known and says what is worth noticing —
+  * DEVELOPER assumes the construct is known and says what is worth noticing:
     cost, edge cases, why this shape over another.
 """
 
@@ -91,7 +91,7 @@ def _typed_params(node: Node) -> str:
 
 TEMPLATES: dict[Kind, dict[Level, Template]] = {
     Kind.MODULE: {
-        Level.ELI5: "This is the whole file — everything below happens here.",
+        Level.ELI5: "This is the whole file: everything below happens here.",
         Level.BEGINNER: "The top level of the file: {statement_count} statements run in order when it loads.",
         Level.DEVELOPER: "Module scope. Anything at this level executes on import.",
     },
@@ -120,7 +120,7 @@ TEMPLATES: dict[Kind, dict[Level, Template]] = {
         Level.ELI5: "A tiny throwaway function written right where it is needed.",
         Level.BEGINNER: lambda n: f"An anonymous function taking {n.meta.get('param_count', 0)} {_plural(int(n.meta.get('param_count', 0)), 'input')}, defined inline instead of given a name.",
         Level.DEVELOPER: lambda n: f"Anonymous function `({', '.join(str(p.get('name')) for p in n.meta.get('params', []))})`."
-        + (" Captures by reference — check the lifetime of what it holds." if n.meta.get("captures_by_reference") else ""),
+        + (" Captures by reference. Check the lifetime of what it holds." if n.meta.get("captures_by_reference") else ""),
     },
     Kind.CLASS: {
         Level.ELI5: lambda n: f"`{n.name}` is a blueprint. You use it to make objects that all work the same way.",
@@ -130,12 +130,12 @@ TEMPLATES: dict[Kind, dict[Level, Template]] = {
         Level.DEVELOPER: lambda n: f"`class {n.name}`"
         + (f"({', '.join(n.meta.get('bases', []))})" if n.meta.get("bases") else "")
         + (f" implements {', '.join(n.meta.get('interfaces', []))}" if n.meta.get("interfaces") else "")
-        + f" — {n.meta.get('method_count', 0)} members.",
+        + f": {n.meta.get('method_count', 0)} members.",
     },
     Kind.INTERFACE: {
         Level.ELI5: "A promise about what something can do, without saying how it does it.",
         Level.BEGINNER: "Declares the methods a class must provide, with no implementations of its own.",
-        Level.DEVELOPER: "Interface — a contract for callers. Implementers supply the bodies.",
+        Level.DEVELOPER: "Interface: a contract for callers. Implementers supply the bodies.",
     },
     Kind.PARAM: {
         Level.ELI5: "A blank the function fills in when someone calls it.",
@@ -165,7 +165,7 @@ TEMPLATES: dict[Kind, dict[Level, Template]] = {
     Kind.LOOP_FOR: {
         Level.ELI5: "Counts through a range of numbers, running the block each time.",
         Level.BEGINNER: "A counting loop: starts at `{init}`, keeps going while `{condition}`, and does `{update}` after each pass.",
-        Level.DEVELOPER: "Counted loop — init `{init}`, guard `{condition}`, step `{update}`.",
+        Level.DEVELOPER: "Counted loop: init `{init}`, guard `{condition}`, step `{update}`.",
     },
     Kind.LOOP_WHILE: {
         Level.ELI5: "Keeps repeating for as long as `{condition}` stays true.",
@@ -175,7 +175,7 @@ TEMPLATES: dict[Kind, dict[Level, Template]] = {
     Kind.LOOP_DO: {
         Level.ELI5: "Does the block once, then keeps going while `{condition}` is true.",
         Level.BEGINNER: "Runs the block first and checks `{condition}` afterwards, so the body always executes at least once.",
-        Level.DEVELOPER: "Post-test loop on `{condition}` — body runs at least once.",
+        Level.DEVELOPER: "Post-test loop on `{condition}`: body runs at least once.",
     },
     Kind.COMPREHENSION: {
         Level.ELI5: "Builds a whole new {comp_type} in one line by going through `{iterable}`.",
@@ -188,7 +188,7 @@ TEMPLATES: dict[Kind, dict[Level, Template]] = {
         Level.DEVELOPER: "Multi-way dispatch on `{subject}` across {case_count} arms.",
     },
     Kind.CASE: {
-        Level.ELI5: "One of the choices — this runs if it matches.",
+        Level.ELI5: "One of the choices. This runs if it matches.",
         Level.BEGINNER: "Handles the case where the value is `{pattern}`.",
         Level.DEVELOPER: "Arm for `{pattern}`.",
     },
@@ -224,7 +224,7 @@ TEMPLATES: dict[Kind, dict[Level, Template]] = {
     },
     Kind.FINALLY: {
         Level.ELI5: "This always happens at the end, no matter what.",
-        Level.BEGINNER: "Runs whether or not the block succeeded — used for cleanup.",
+        Level.BEGINNER: "Runs whether or not the block succeeded. Used for cleanup.",
         Level.DEVELOPER: "Runs on every exit path, including exceptions and returns.",
     },
     Kind.THROW: {
@@ -235,7 +235,7 @@ TEMPLATES: dict[Kind, dict[Level, Template]] = {
     Kind.WITH: {
         Level.ELI5: "Borrows something and always gives it back when finished.",
         Level.BEGINNER: "Sets up `{managers}` and guarantees it is cleaned up when the block ends, even on failure.",
-        Level.DEVELOPER: "Scoped resource on `{managers}` — cleanup runs on every exit path.",
+        Level.DEVELOPER: "Scoped resource on `{managers}`. Cleanup runs on every exit path.",
     },
     Kind.ASSIGN: {
         Level.ELI5: "Puts `{value}` into a box called `{name}`.",
@@ -314,7 +314,7 @@ TEMPLATES: dict[Kind, dict[Level, Template]] = {
     },
     Kind.BOOLOP: {
         Level.ELI5: "Joins two checks together.",
-        Level.BEGINNER: "Combines the conditions with `{op}` — it stops as soon as the answer is decided.",
+        Level.BEGINNER: "Combines the conditions with `{op}`. It stops as soon as the answer is decided.",
         Level.DEVELOPER: "Short-circuiting `{op}` over {operand_count} operands.",
     },
     Kind.BINOP: {
@@ -335,7 +335,7 @@ TEMPLATES: dict[Kind, dict[Level, Template]] = {
     Kind.SLICE: {
         Level.ELI5: "Takes a chunk out of `{container}`.",
         Level.BEGINNER: "Copies a section of `{container}` given by `{key}` into a new collection.",
-        Level.DEVELOPER: "Slice `{container}[{key}]` — allocates a copy.",
+        Level.DEVELOPER: "Slice `{container}[{key}]`: allocates a copy.",
     },
     Kind.ATTRIBUTE: {
         Level.ELI5: "Looks at the `{attribute}` part of `{object}`.",
@@ -374,7 +374,7 @@ TEMPLATES: dict[Kind, dict[Level, Template]] = {
     },
     Kind.COMMENT: {
         Level.ELI5: "A note from the author. The computer ignores it.",
-        Level.BEGINNER: "A comment — documentation for humans, not executed.",
+        Level.BEGINNER: "A comment: documentation for humans, not executed.",
         Level.DEVELOPER: "Comment.",
     },
     # -- SQL -----------------------------------------------------------------
@@ -395,8 +395,8 @@ TEMPLATES: dict[Kind, dict[Level, Template]] = {
     },
     Kind.JOIN: {
         Level.ELI5: "Sticks another table on, matching rows that belong together.",
-        Level.BEGINNER: "Attaches `{table}` where `{on}` matches — {note}.",
-        Level.DEVELOPER: "{name} on `{on}`. {note}.",
+        Level.BEGINNER: "Attaches `{table}` where `{on}` matches: {note}.",
+        Level.DEVELOPER: "{name} on `{on}`: {note}.",
     },
     Kind.WHERE: {
         Level.ELI5: "Throws away the rows that do not fit.",
@@ -410,13 +410,13 @@ TEMPLATES: dict[Kind, dict[Level, Template]] = {
     },
     Kind.HAVING: {
         Level.ELI5: "Throws away whole piles that do not fit.",
-        Level.BEGINNER: "Filters the grouped rows by `{condition}` — this runs after grouping, unlike WHERE.",
+        Level.BEGINNER: "Filters the grouped rows by `{condition}`. This runs after grouping, unlike WHERE.",
         Level.DEVELOPER: "Post-aggregation filter `{condition}`.",
     },
     Kind.ORDER_BY: {
         Level.ELI5: "Puts the answers in order.",
         Level.BEGINNER: "Sorts the result by {keys}.",
-        Level.DEVELOPER: "Sort on {keys} — O(n log n) unless an index already provides the order.",
+        Level.DEVELOPER: "Sort on {keys}: O(n log n) unless an index already provides the order.",
     },
     Kind.LIMIT: {
         Level.ELI5: "Only keeps the first {count}.",
@@ -431,7 +431,7 @@ TEMPLATES: dict[Kind, dict[Level, Template]] = {
     Kind.WINDOW: {
         Level.ELI5: "Works out a number for each row while still seeing its neighbours.",
         Level.BEGINNER: "Runs `{function}` across related rows{partition_note}, without collapsing them into one.",
-        Level.DEVELOPER: "Window `{function}`{partition_note} — row count preserved.",
+        Level.DEVELOPER: "Window `{function}`{partition_note}. Row count preserved.",
     },
     Kind.SUBQUERY: {
         Level.ELI5: "A question inside the question.",
@@ -474,15 +474,15 @@ TEMPLATES: dict[Kind, dict[Level, Template]] = {
 def _callable_notes(node: Node) -> str:
     notes = []
     if node.meta.get("is_async"):
-        notes.append("async — returns a promise/coroutine, not the value itself")
+        notes.append("async. Returns a promise/coroutine, not the value itself")
     if node.meta.get("is_generator"):
-        notes.append("generator — produces values lazily")
+        notes.append("generator. Produces values lazily")
     if node.meta.get("is_static"):
-        notes.append("static — no instance state")
+        notes.append("static. No instance state")
     if node.meta.get("is_abstract"):
-        notes.append("abstract — subclasses supply the body")
+        notes.append("abstract. Subclasses supply the body")
     if node.meta.get("is_const"):
-        notes.append("const — does not mutate the receiver")
+        notes.append("const. Does not mutate the receiver")
     if node.meta.get("throws"):
         notes.append(f"declares throws {node.meta['throws']}")
     return (" " + "; ".join(notes).capitalize() + ".") if notes else ""
@@ -495,7 +495,7 @@ def _derived_slots(node: Node, level: Level) -> dict[str, str]:
 
     out["else_note"] = ", otherwise the else block runs" if meta.get("has_else") else ""
     out["guard_note"] = (
-        " Guard clause — it leaves early so the rest of the function reads unindented."
+        " Guard clause: it leaves early so the rest of the function reads unindented."
         if meta.get("is_guard")
         else ""
     )
@@ -506,7 +506,7 @@ def _derived_slots(node: Node, level: Level) -> dict[str, str]:
         else ""
     )
     out["termination_note"] = (
-        " No break in the body — this only ends when the condition changes."
+        " No break in the body, so this only ends when the condition changes."
         if meta.get("is_infinite") and not meta.get("has_break")
         else ""
     )
@@ -518,7 +518,7 @@ def _derived_slots(node: Node, level: Level) -> dict[str, str]:
     args = meta.get("args") or []
     out["args_note"] = f" ({', '.join(str(a) for a in args[:3])})" if args and arity <= 3 else ""
     cost = meta.get("cost")
-    out["cost_note"] = f" — costs about O({cost})." if cost else ""
+    out["cost_note"] = f": costs about O({cost})." if cost else ""
     out["allocation_note"] = (
         " Heap-allocated; something must free it." if meta.get("is_array") is not None else ""
     )
@@ -528,21 +528,21 @@ def _derived_slots(node: Node, level: Level) -> dict[str, str]:
     )
     annotation = meta.get("annotation")
     out["decl_type"] = f" as a {annotation}" if annotation else ""
-    out["const_note"] = " (constant — cannot be reassigned)" if meta.get("is_const") else ""
+    out["const_note"] = " (constant: cannot be reassigned)" if meta.get("is_const") else ""
     out["identity_note"] = (
-        " Identity comparison, not equality — true only for the same object."
+        " Identity comparison, not equality: true only for the same object."
         if meta.get("is_identity")
         else ""
     )
     out["index_note"] = " Negative index counts from the end." if meta.get("negative") else ""
     out["pointer_note"] = " Dereferences a pointer." if meta.get("via_pointer") else ""
     out["magic_note"] = (
-        " Unexplained constant — a named value would document the intent."
+        " Unexplained constant: a named value would document the intent."
         if meta.get("is_magic_number")
         else ""
     )
     out["cast_note"] = (
-        " (C-style cast — unchecked)" if meta.get("style") == "c-style" else ""
+        " (C-style cast: unchecked)" if meta.get("style") == "c-style" else ""
     )
     size = int(meta.get("size", 0) or 0)
     out["size_word"] = _plural(size, "item")
@@ -574,7 +574,7 @@ def _derived_slots(node: Node, level: Level) -> dict[str, str]:
     out["dedup_note"] = " and removes duplicates" if meta.get("deduplicates") else ""
     out["distinct_note"] = " over distinct values" if meta.get("is_distinct") else ""
     out["where_note"] = (
-        "" if meta.get("has_where") else " — with no WHERE clause, this hits every row"
+        "" if meta.get("has_where") else ": with no WHERE clause, this hits every row"
     )
     out["cte_note"] = " Recursive." if meta.get("is_recursive") else ""
     return out

@@ -30,7 +30,7 @@ EXTENSIONS = {
     ".sql": Language.SQL,
 }
 
-#: (pattern, language, weight). Weighted because single keywords overlap heavily —
+#: (pattern, language, weight). Weighted because single keywords overlap heavily:
 #: `class` says nothing, `def foo(self)` and `#include <` say a great deal.
 SIGNATURES: list[tuple[re.Pattern[str], Language, int]] = [
     (re.compile(r"^\s*def\s+\w+\s*\(.*\)\s*(->.*)?:", re.M), Language.PYTHON, 5),
@@ -131,7 +131,7 @@ def explain(
 ) -> Explanation:
     """Parse, analyse and narrate `code`. Never raises on malformed input.
 
-    `enrich` opts into the LLM layer — True for the default provider, or a provider
+    `enrich` opts into the LLM layer: True for the default provider, or a provider
     name. A failed enrichment is reported on the result, never raised: the static
     explanation is always complete on its own.
     """

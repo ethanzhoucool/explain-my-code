@@ -133,7 +133,7 @@ _FUNC_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
 def _is_generator(fn: ast.AST) -> bool:
     """True when the body yields.
 
-    Stops at nested function boundaries — a `yield` inside an inner generator does not
+    Stops at nested function boundaries: a `yield` inside an inner generator does not
     make the outer function a generator.
     """
     stack: list[ast.AST] = list(ast.iter_child_nodes(fn))
@@ -682,7 +682,7 @@ class PythonLowerer:
             comp.extend(self.visit(gen.iter))
             for condition in gen.ifs:
                 comp.extend(self.visit(condition))
-        # The output expression is where the real work happens — `[await f(x) for x in xs]`
+        # The output expression is where the real work happens: `[await f(x) for x in xs]`
         # has its call and its await here, not in the iterable.
         for attribute in ("elt", "key", "value"):
             output = getattr(node, attribute, None)
@@ -943,7 +943,7 @@ def _is_docstring_stmt(stmt: ast.stmt) -> bool:
 
 
 def _is_guard_clause(node: ast.If) -> bool:
-    """`if not x: return` — worth naming, since it reads differently from a real branch."""
+    """`if not x: return`. Worth naming, since it reads differently from a real branch."""
     return (
         not node.orelse
         and len(node.body) == 1

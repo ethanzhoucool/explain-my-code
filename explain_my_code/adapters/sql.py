@@ -41,11 +41,11 @@ AGGREGATES = {"count", "sum", "avg", "min", "max", "array_agg", "string_agg", "g
 
 #: Cost note per join type, surfaced in developer-level explanations.
 JOIN_NOTES = {
-    "": "inner join — rows that match on both sides",
-    "LEFT": "left join — every left row survives, unmatched right columns are NULL",
-    "RIGHT": "right join — every right row survives",
-    "FULL": "full outer join — unmatched rows from both sides survive",
-    "CROSS": "cross join — every left row paired with every right row",
+    "": "keeps only rows that match on both sides",
+    "LEFT": "every left row survives, unmatched right columns are NULL",
+    "RIGHT": "every right row survives, unmatched left columns are NULL",
+    "FULL": "unmatched rows from both sides survive",
+    "CROSS": "every left row is paired with every right row",
 }
 
 
@@ -73,7 +73,7 @@ class _Positions:
 def _offsets(expression: Any, exclude: tuple[str, ...] = ()) -> tuple[int, int] | None:
     """Union of every positioned descendant's offsets.
 
-    `exclude` drops named args from the union — a `SELECT` sitting under a `WITH` would
+    `exclude` drops named args from the union: a `SELECT` sitting under a `WITH` would
     otherwise claim the CTE's text as part of its own span.
     """
     skipped = {id(expression.args[key]) for key in exclude if expression.args.get(key) is not None}

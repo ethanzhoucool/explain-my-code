@@ -48,7 +48,7 @@ JavaScript / Java / C++, sqlglot for SQL), analysed for complexity, scope, call 
 and asymptotic cost, then narrated at three audience levels from typed facts rather than
 keyword matching.
 
-The optional `enrich` flag layers an LLM pass on top, grounded in that analysis — it can
+The optional `enrich` flag layers an LLM pass on top, grounded in that analysis. It can
 add intent and likely bugs, and is never the source of structural claims.
 """
 
@@ -78,7 +78,7 @@ async def rate_limit(request: Request, call_next):  # type: ignore[no-untyped-de
     """Fixed-window limiter on the write-shaped endpoints.
 
     The LLM path costs real money, so an unauthenticated public demo needs some ceiling.
-    In-process by design — one instance, one bucket; a multi-instance deployment should
+    In-process by design. One instance, one bucket; a multi-instance deployment should
     put a real limiter in front.
     """
     if request.method != "POST" or not request.url.path.startswith("/v1/"):
@@ -154,7 +154,7 @@ def explain_all_levels(payload: ExplainRequest) -> Any:
 
 @app.post("/v1/analyze", tags=["analyze"])
 def analyze_endpoint(payload: AnalyzeRequest) -> Any:
-    """Metrics, findings, call graph and symbols — no prose."""
+    """Metrics, findings, call graph and symbols. No prose."""
     result = explain(payload.code, language=payload.language, filename=payload.filename)
     return {
         "language": result.language.value,

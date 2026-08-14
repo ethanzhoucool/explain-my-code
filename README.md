@@ -1,7 +1,7 @@
 # Explain My Code
 
 **Static analysis that explains itself.** Paste Python, JavaScript, Java, C++ or SQL and get a
-line-by-line walkthrough pitched at one of three audiences — plus complexity metrics, detected
+line-by-line walkthrough pitched at one of three audiences, plus complexity metrics, detected
 concepts, and the findings a reviewer would leave.
 
 [![CI](https://github.com/ethanzhoucool/explain-my-code/actions/workflows/ci.yml/badge.svg)](https://github.com/ethanzhoucool/explain-my-code/actions/workflows/ci.yml)
@@ -11,7 +11,7 @@ concepts, and the findings a reviewer would leave.
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
 **Live demo:** https://explain-my-code-w3sj.onrender.com · **API:** [`/docs`](https://explain-my-code-w3sj.onrender.com/docs)
-*(Render free tier — the first request may take 30–60s while the instance wakes.)*
+*(Render free tier: the first request may take 30–60s while the instance wakes.)*
 
 ---
 
@@ -30,11 +30,11 @@ def fib(n):
     return fib(n - 1) + fib(n - 2)
 ```
 
-> `fib(n)` — **O(n)** · `fib` recurses but memoises, so each distinct input is computed once.
+> `fib(n)` → **O(n)**. `fib` recurses but memoises, so each distinct input is computed once.
 > 2 independent paths, cognitive complexity 1, recursive.
 
 Delete the decorator and the same code is re-read as **O(2^n)** with a high-severity finding.
-Nothing about that is in a lookup table — it comes from the decorator list on the parsed
+Nothing about that is in a lookup table. It comes from the decorator list on the parsed
 function node and the count of self-calls in its body.
 
 Three more things fall out of parsing properly:
@@ -110,7 +110,7 @@ writing **no** new explanations.
 
 | Pass | Output |
 |---|---|
-| **Complexity** | Cyclomatic (McCabe), cognitive (SonarSource — nesting is punished, so three nested `if`s score 6 where three sequential ones score 3), max nesting depth |
+| **Complexity** | Cyclomatic (McCabe), cognitive (SonarSource: nesting is punished, so three nested `if`s score 6 where three sequential ones score 3), max nesting depth |
 | **Volume** | Halstead vocabulary, volume, difficulty, effort, estimated writing time |
 | **Maintainability** | Classic MI normalised to 0–100, graded A–F |
 | **Cost** | Asymptotic estimate per function, with the reason stated and a confidence attached |
@@ -118,7 +118,7 @@ writing **no** new explanations.
 | **Concepts** | 31 named ideas (closures, memoisation, guard clauses, RAII, window functions…), each explained at all three levels |
 | **Findings** | Bare excepts, swallowed errors, mutable default arguments, unbounded loops, exponential recursion, `SELECT *`, cross joins, unfiltered `DELETE`, unbalanced allocations |
 
-Every threshold is quoted in the message it produces — a finding that says "too complex"
+Every threshold is quoted in the message it produces. A finding that says "too complex"
 without saying *how* complex, against *what* limit, is not an explanation.
 
 ---
@@ -174,9 +174,9 @@ curl -X POST localhost:5000/v1/explain \
 | Endpoint | Purpose |
 |---|---|
 | `POST /v1/explain` | Parse, analyse, explain at one level |
-| `POST /v1/explain/all-levels` | All three levels in one call — the client switches level with no round trip |
+| `POST /v1/explain/all-levels` | All three levels in one call, so the client switches level with no round trip |
 | `POST /v1/explain/stream` | SSE: static explanation first, LLM enrichment streamed after |
-| `POST /v1/analyze` | Metrics, findings, call graph, symbols — no prose |
+| `POST /v1/analyze` | Metrics, findings, call graph, symbols. No prose |
 | `POST /v1/detect` | Language detection with confidence |
 | `GET /v1/languages` | Supported languages and their parsers |
 | `GET /v1/concepts` | The full concept catalogue |
@@ -188,12 +188,12 @@ Full OpenAPI schema at `/docs`.
 
 ## The optional AI layer
 
-Off by default. When enabled, it does **not** explain the code — the static pass already did
+Off by default. When enabled, it does not explain the code. The static pass already did
 that. It receives the established facts and is asked only for what a parser cannot derive:
 intent, naming quality, domain meaning, and likely bugs.
 
 ```
-STATIC FACTS (already established — do not repeat these):
+STATIC FACTS (already established, do not repeat these):
 - 38 lines of code, cyclomatic complexity 11, maintainability 45.2/100
 - Callables:
     line 7: constructor `__init__` (3 params, cyclomatic 1, O(1))
@@ -250,8 +250,8 @@ costs less than the round trip to ask for them.
 
 ```
 explain_my_code/
-├── ir.py                     # the universal IR — node kinds, spans, annotations
-├── core.py                   # explain() — the single entry point
+├── ir.py                     # the universal IR: node kinds, spans, annotations
+├── core.py                   # explain(), the single entry point
 ├── cache.py                  # content-addressed LRU + optional disk tier
 ├── cli.py                    # emc
 ├── adapters/                 # source → IR
@@ -280,7 +280,7 @@ tests/                        # 145 tests
 
 ## Extending it
 
-**Add a language** — write an adapter that maps the grammar onto existing `Kind`s:
+**Add a language:** write an adapter that maps the grammar onto existing `Kind`s:
 
 ```python
 @register(Language.RUBY)
@@ -291,7 +291,7 @@ class RubyAdapter(TreeSitterAdapter):
 
 Every existing explanation, metric, concept and finding applies immediately.
 
-**Add a concept** — one entry, three audiences, one detector:
+**Add a concept:** one entry, three audiences, one detector:
 
 ```python
 Concept(
@@ -303,7 +303,7 @@ Concept(
 )
 ```
 
-**Add a finding** — a rule in `analysis/findings.py` that names its threshold in the message.
+**Add a finding:** a rule in `analysis/findings.py` that names its threshold in the message.
 
 ---
 
@@ -338,7 +338,7 @@ layer, and `EMC_CACHE_DIR` only if you want the enrichment cache to survive rest
 - **The cost estimate is a heuristic and says so.** It reads loop nesting, recursion shape and a
   table of known library costs. It carries a confidence value and is labelled as an estimate
   everywhere it appears. It will not see through indirection or data-dependent bounds.
-- **Analysis is single-file.** "Assigned but never read" means *in this snippet* — it never
+- **Analysis is single-file.** "Assigned but never read" means *in this snippet*. It never
   claims dead code, because it cannot see the rest of the program.
 - **C++ templates are parsed, not instantiated.** tree-sitter gives the syntax; no type checking
   or overload resolution happens.

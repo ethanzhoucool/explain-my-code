@@ -194,7 +194,7 @@ NESTING_KINDS: frozenset[Kind] = frozenset(
 
 @dataclass(frozen=True, slots=True, order=True)
 class Span:
-    """A source range. Lines are 1-based, columns 0-based — editor convention."""
+    """A source range. Lines are 1-based, columns 0-based. Editor convention."""
 
     start_line: int
     start_col: int
@@ -343,7 +343,7 @@ class Source(str, Enum):
     """Where an explanation came from. Surfaced in the UI so AI text is never
     mistaken for a fact derived from the tree."""
 
-    STATIC = "static"  # synthesized from the IR — deterministic
+    STATIC = "static"  # synthesized from the IR: deterministic
     HEURISTIC = "heuristic"  # pattern match, may be wrong
     LLM = "llm"  # model-generated, grounded in the IR
 
@@ -391,7 +391,7 @@ class Annotation:
 
 @dataclass(slots=True)
 class Diagnostic:
-    """A parse problem. Never fatal — a partial tree still explains most of a file."""
+    """A parse problem. Never fatal. A partial tree still explains most of a file."""
 
     message: str
     span: Span | None = None

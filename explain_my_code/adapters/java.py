@@ -156,7 +156,7 @@ class JavaAdapter(TreeSitterAdapter):
         return _text(catch_type, 40)
 
     def _meta_call(self, ts_node) -> dict[str, Any]:  # type: ignore[override]
-        """Java puts the receiver in `object` and the name in `name` — no `function` field."""
+        """Java puts the receiver in `object` and the name in `name`. No `function` field."""
         args = _field(ts_node, "arguments")
         arg_nodes = list(args.named_children) if args is not None else []
         callee = _field_text(ts_node, "name", 32)

@@ -1,4 +1,4 @@
-"""Explain My Code — static analysis that explains itself."""
+"""Explain My Code: static analysis that explains itself."""
 
 __version__ = "2.0.0"
 

@@ -51,7 +51,7 @@ DETAIL_KINDS = frozenset(
     }
 )
 
-#: Added only at DEVELOPER level — expression-level noise otherwise.
+#: Added only at DEVELOPER level: expression-level noise otherwise.
 EXPRESSION_KINDS = frozenset(
     {
         Kind.COMPARE, Kind.BOOLOP, Kind.BINOP, Kind.UNOP, Kind.INDEX, Kind.SLICE,
@@ -100,7 +100,7 @@ def _detail_for(node: Node, analysis: Analysis) -> str | None:
     if node.kind in CALLABLE_KINDS:
         for function in analysis.functions:
             if function.node_id == node.id:
-                bits = [f"{function.complexity_class} — {function.complexity_reason}"]
+                bits = [f"{function.complexity_class}: {function.complexity_reason}"]
                 if function.cyclomatic > 1:
                     bits.append(
                         f"{function.cyclomatic} independent path(s), "
@@ -110,7 +110,7 @@ def _detail_for(node: Node, analysis: Analysis) -> str | None:
                     bits.append("recursive")
                 return " · ".join(bits)
     if node.kind in LOOP_KINDS and node.loop_depth >= 1:
-        return f"Nested {node.loop_depth + 1} loops deep — the body runs about n^{node.loop_depth + 1} times."
+        return f"Nested {node.loop_depth + 1} loops deep. The body runs about n^{node.loop_depth + 1} times."
     return None
 
 
@@ -318,7 +318,7 @@ def _sql_summary(analysis: Analysis, level: Level) -> str:
     ]
     outer = [j.name for j in joins if j.meta.get("is_outer")]
     if outer:
-        parts.append(f"Outer joins present ({_joined(outer)}) — NULL-extended rows survive.")
+        parts.append(f"Outer joins present ({_joined(outer)}): NULL-extended rows survive.")
     high = [f for f in analysis.findings if f.severity == "high"]
     if high:
         parts.append("Risks: " + _joined([f.title for f in high]) + ".")

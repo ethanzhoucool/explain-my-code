@@ -1,4 +1,4 @@
-"""`emc` — the command line front end.
+"""`emc`. The command line front end.
 
 Same pipeline as the API, rendered for a terminal: complexity in the gutter, the
 explanation beside the code, metrics and findings underneath.
@@ -273,7 +273,7 @@ def metrics(
     language: str = typer.Option(None, "--language", "-L"),
     output: str = typer.Option("terminal", "--format", "-f", help="terminal | json."),
 ) -> None:
-    """Metrics and findings only — no prose."""
+    """Metrics and findings only. No prose."""
     source, filename = _read_source(path)
     result = explain(source, language=Language(language) if language else None, filename=filename)
     if output == "json":

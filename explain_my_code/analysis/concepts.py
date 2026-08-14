@@ -1,4 +1,4 @@
-"""Concept detection: the named ideas a reader needs in order to follow the code.
+"""Concept detection: the named ideas a reader needs to follow the code.
 
 This is the feature the v1 keyword tooltips could not express. "This line uses a
 comprehension" is a fact about a token; "this file leans on recursion, memoisation and
@@ -252,7 +252,7 @@ CONCEPTS: list[Concept] = [
         "async-await", "Async / await", "concurrency",
         "Code that can pause politely while it waits, letting other work happen instead of everyone standing still.",
         "Marks work that waits on something slow (network, disk) so the program can run other tasks meanwhile.",
-        "Coroutine suspension points. Concurrency, not parallelism — one thread interleaves at each await.",
+        "Coroutine suspension points. Concurrency, not parallelism. One thread interleaves at each await.",
         of_kind(Kind.AWAIT),
     ),
     Concept(
@@ -272,7 +272,7 @@ CONCEPTS: list[Concept] = [
     Concept(
         "decorator", "Decorator", "functions",
         "A sticker put on a function that gives it an extra power without changing what is inside.",
-        "Wraps a function to add behaviour — caching, logging, access checks — without editing its body.",
+        "Wraps a function to add behaviour (caching, logging, access checks) without editing its body.",
         "Higher-order wrapper applied at definition time. Preserve metadata with functools.wraps.",
         of_kind(Kind.DECORATOR),
     ),
@@ -320,7 +320,7 @@ CONCEPTS: list[Concept] = [
     ),
     Concept(
         "nested-loops", "Nested loops", "performance",
-        "A loop inside a loop — for every item in the first, it goes through all of the second.",
+        "A loop inside a loop: for every item in the first, it goes through all of the second.",
         "Each level multiplies the work, so two nested loops over n items do n × n steps.",
         "Quadratic or worse. The usual fix is a hash index over the inner collection.",
         _nested_loops,
@@ -356,14 +356,14 @@ CONCEPTS: list[Concept] = [
     Concept(
         "short-circuit", "Short-circuit evaluation", "control-flow",
         "Stopping as soon as the answer is obvious, without checking the rest.",
-        "`and` stops at the first false, `or` stops at the first true — the rest is never evaluated.",
+        "`and` stops at the first false, `or` stops at the first true. The rest is never evaluated.",
         "Lazy boolean evaluation. Relied on for null guards; also why side effects in conditions are risky.",
         of_kind(Kind.BOOLOP),
     ),
     Concept(
         "bitwise", "Bitwise operations", "low-level",
         "Working with the tiny on/off switches that numbers are made of.",
-        "Manipulates individual bits — used for flags, masks, and fast multiply/divide by powers of two.",
+        "Manipulates individual bits. Used for flags, masks, and fast multiply/divide by powers of two.",
         "Bit-level ops. Cheap, but check signedness and shift-width assumptions.",
         _bitwise,
     ),
@@ -402,7 +402,7 @@ CONCEPTS: list[Concept] = [
     Concept(
         "sql-aggregation", "Aggregation", "sql",
         "Squashing lots of rows into one summary number, like counting or totalling.",
-        "Collapses groups of rows into a single value per group — count, sum, average.",
+        "Collapses groups of rows into a single value per group. Count, sum, average.",
         "Aggregate over a grouping set. Non-aggregated projections must appear in GROUP BY.",
         of_kind(Kind.AGGREGATE),
         languages=frozenset({Language.SQL}),
@@ -435,7 +435,7 @@ CONCEPTS: list[Concept] = [
         "sql-full-scan", "Unfiltered read", "sql",
         "Looking at every single row in the table, because nothing narrows it down.",
         "No WHERE clause, so the database reads the whole table.",
-        "Full scan. Fine on small tables, expensive at scale — add a predicate or a limit.",
+        "Full scan. Fine on small tables, expensive at scale. Add a predicate or a limit.",
         _full_table_scan,
         languages=frozenset({Language.SQL}),
     ),

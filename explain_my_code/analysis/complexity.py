@@ -1,7 +1,7 @@
 """Asymptotic-cost heuristic.
 
 This is a heuristic and is labelled as one everywhere it surfaces. It reads loop
-nesting, recursion shape, and the cost of known library calls — enough to be right on
+nesting, recursion shape, and the cost of known library calls: enough to be right on
 the code people paste into an explainer (sorts, nested scans, naive fib) and honest
 about the cases it cannot see through.
 """
@@ -16,7 +16,7 @@ from explain_my_code.ir import CALLABLE_KINDS, LOOP_KINDS, Kind, Node
 #: Argument shrink patterns that turn linear recursion logarithmic.
 HALVING = re.compile(r"(//\s*2|/\s*2|>>\s*1|mid|\bhalf\b|len\(\w+\)\s*//\s*2)", re.IGNORECASE)
 
-#: Memoisation markers — the difference between O(2^n) and O(n) for naive fib.
+#: Memoisation markers. The difference between O(2^n) and O(n) for naive fib.
 MEMO_DECORATORS = ("lru_cache", "cache", "memoize", "functools.cache")
 
 COST_ORDER = ["1", "log n", "n", "n log n", "n²", "n³", "2^n"]
@@ -172,7 +172,7 @@ def estimate(function: Node, *, is_recursive: bool = False) -> ComplexityEstimat
                 0.6,
             )
         return ComplexityEstimate(
-            "O(1)", "No loops and no recursion — the work does not grow with the input.", 0.8
+            "O(1)", "No loops and no recursion. The work does not grow with the input.", 0.8
         )
 
     label = _loop_label(depth)

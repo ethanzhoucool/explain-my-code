@@ -1,7 +1,7 @@
 """Shared tree-sitter lowering machinery for JavaScript, Java and C++.
 
-Each language contributes two tables — a node-type -> `Kind` map and a set of meta
-extractors — and inherits everything else: span arithmetic, header-span trimming,
+Each language contributes two tables (a node-type -> `Kind` map and a set of meta
+extractors) and inherits everything else: span arithmetic, header-span trimming,
 transparent pass-through of grammar-internal nodes, and error recovery.
 
 Tree-sitter reports rows 0-based; the IR is 1-based, so every span conversion goes
@@ -31,7 +31,7 @@ except ImportError:  # pragma: no cover
 
 MAX_REPR = 64
 
-#: Child node types that mean "the body starts here" — used to trim header spans so a
+#: Child node types that mean "the body starts here". Used to trim header spans so a
 #: hover targets `if (x > 0)` rather than the whole 30-line block beneath it.
 BODY_TYPES = frozenset(
     {
@@ -156,7 +156,7 @@ class TreeSitterAdapter:
     KINDS: dict[str, Kind] = {}
     #: node types to skip entirely, children included (modifiers, type noise).
     OPAQUE: frozenset[str] = frozenset()
-    #: node types treated as leaves — emitted, but not recursed into.
+    #: node types treated as leaves: emitted, but not recursed into.
     LEAVES: frozenset[str] = frozenset()
     COMMENT_TYPES: frozenset[str] = frozenset({"comment"})
     LITERAL_TYPES: frozenset[str] = frozenset()
@@ -232,7 +232,7 @@ class TreeSitterAdapter:
     def _collect_errors(self, ts_root: TSNode, limit: int = 8) -> list[Diagnostic]:
         """Tree-sitter always returns a tree; ERROR nodes mark what it could not read.
 
-        Reported as warnings, not failures — the surrounding code still explains fine.
+        Reported as warnings, not failures. The surrounding code still explains fine.
         """
         if not ts_root.has_error:
             return []
@@ -288,7 +288,7 @@ class TreeSitterAdapter:
         return [node]
 
     def synth_children(self, ts_node: TSNode, kind: Kind) -> list[Node]:
-        """IR children with no 1:1 grammar node — parameters, mostly.
+        """IR children with no 1:1 grammar node: parameters, mostly.
 
         Grammars disagree wildly on parameter shape (`formal_parameters` holding bare
         identifiers in JS, real `formal_parameter` nodes in Java, `parameter_declaration`

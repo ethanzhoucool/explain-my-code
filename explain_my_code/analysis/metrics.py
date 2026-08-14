@@ -1,7 +1,7 @@
 """Complexity and volume metrics computed over the IR.
 
 Because these run on the IR rather than on per-language source, a Java method and a
-Python function are scored by exactly the same rules — which is the only way the
+Python function are scored by exactly the same rules: which is the only way the
 numbers are comparable in a tool that accepts five languages.
 """
 
@@ -98,7 +98,7 @@ def halstead_of(node: Node) -> Halstead:
 def cyclomatic_of(node: Node) -> int:
     """McCabe: one path, plus one per decision point.
 
-    A short-circuiting `a and b and c` contributes two, not one — each operand after the
+    A short-circuiting `a and b and c` contributes two, not one. Each operand after the
     first is its own branch at runtime.
     """
     total = 1
@@ -115,7 +115,7 @@ def cyclomatic_of(node: Node) -> int:
 def cognitive_of(node: Node) -> int:
     """SonarSource cognitive complexity: how hard the flow is to hold in your head.
 
-    Differs from McCabe in the part that matters for explanation — nesting is punished.
+    Differs from McCabe in the part that matters for explanation. Nesting is punished.
     Three sequential `if`s score 3; three nested `if`s score 6.
     """
     total = 0

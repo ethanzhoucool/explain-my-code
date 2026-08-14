@@ -1,7 +1,7 @@
 """Content-addressed cache for enrichment results.
 
-Keyed on everything that can change the answer — source, language, level, provider,
-model, and a schema version — so a prompt change or a model swap never serves a stale
+Keyed on everything that can change the answer (source, language, level, provider,
+model, and a schema version) so a prompt change or a model swap never serves a stale
 explanation. In-memory LRU by default, with an optional disk tier for the deployed
 service where a cold instance would otherwise re-pay for every popular snippet.
 """

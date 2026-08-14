@@ -1,8 +1,8 @@
 """Optional LLM enrichment, grounded in the static analysis.
 
 v1 handed the model a bare snippet and asked it to explain everything, so its output
-had to be trusted wholesale. Here the static pass has already established the facts —
-what the constructs are, how they nest, what they cost — and the model is given that
+had to be trusted wholesale. Here the static pass has already established the facts:
+what the constructs are, how they nest, what they cost. The model is given that
 as context and asked only for what static analysis genuinely cannot derive: intent,
 naming quality, domain meaning, and likely bugs.
 
@@ -17,6 +17,7 @@ Three things follow from that:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -101,7 +102,7 @@ Your job is ONLY to add what static analysis cannot derive:
   - context: why a reader might find a construct surprising here
 
 Rules:
-  - Never restate a fact you were given. "This is a for loop" is worthless — the reader
+  - Never restate a fact you were given. "This is a for loop" is worthless. The reader
     already has that.
   - Never contradict the supplied facts. If your reading disagrees with them, say so in
     `risks` and lower your confidence; do not assert the opposite.
@@ -149,13 +150,13 @@ class EnrichmentError(RuntimeError):
 
 
 def build_context(analysis: Analysis, level: Level, source: str) -> str:
-    """The facts block. Compact on purpose — it is prepended to every request."""
+    """The facts block. Compact on purpose. It is prepended to every request."""
     metrics = analysis.metrics
     parts: list[str] = [
         f"LANGUAGE: {analysis.language.value} (parsed by {analysis.parser})",
-        f"AUDIENCE: {level.value} — {LEVEL_GUIDANCE[level]}",
+        f"AUDIENCE: {level.value}: {LEVEL_GUIDANCE[level]}",
         "",
-        "STATIC FACTS (already established — do not repeat these):",
+        "STATIC FACTS (already established, do not repeat these):",
         f"- {metrics.code_lines} lines of code, cyclomatic complexity {metrics.cyclomatic}, "
         f"maintainability {metrics.maintainability}/100",
     ]
@@ -299,7 +300,7 @@ class AnthropicProvider:
     def available(self) -> bool:
         if not os.environ.get("ANTHROPIC_API_KEY") and not os.environ.get("ANTHROPIC_AUTH_TOKEN"):
             # An `ant auth login` profile also works, so absence of the env var is not
-            # proof of no credentials — only that we cannot confirm them cheaply.
+            # proof of no credentials: only that we cannot confirm them cheaply.
             return _anthropic_profile_exists()
         try:
             import anthropic  # noqa: F401
@@ -343,16 +344,56 @@ def _anthropic_profile_exists() -> bool:
 
 
 class GeminiProvider:
-    """Gemini via the REST API — kept from v1 so existing deployments keep working."""
+    """Gemini via the REST API: kept from v1 so existing deployments keep working.
+
+    Google retires model IDs on a schedule, and a pinned one turns into a 404 with no
+    warning: v1 shipped `gemini-2.0-flash` and simply stopped working when it was shut
+    down. So a 404 here is treated as a recoverable condition. The provider asks the
+    API which models exist and retries once against a current one, rather than handing
+    the user a dead model name.
+    """
 
     name = "gemini"
     ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models"
+    DEFAULT_MODEL = "gemini-2.5-flash"
+    #: Preference order when recovering from a retired model.
+    PREFERRED = ("flash-latest", "3.7-flash", "3.5-flash", "2.5-flash", "flash", "pro")
 
     def __init__(self, model: str | None = None) -> None:
-        self.model = model or os.environ.get("EMC_GEMINI_MODEL", "gemini-2.0-flash")
+        self.model = model or os.environ.get("EMC_GEMINI_MODEL", self.DEFAULT_MODEL)
 
     def available(self) -> bool:
         return bool(os.environ.get("GEMINI_API_KEY"))
+
+    def list_models(self) -> list[str]:
+        """Model IDs on this key that can serve generateContent."""
+        import httpx
+
+        key = os.environ.get("GEMINI_API_KEY")
+        if not key:
+            return []
+        try:
+            response = httpx.get(f"{self.ENDPOINT}?key={key}&pageSize=200", timeout=30.0)
+            response.raise_for_status()
+        except httpx.HTTPError:
+            return []
+        out = []
+        for entry in response.json().get("models", []):
+            if "generateContent" in entry.get("supportedGenerationMethods", []):
+                out.append(str(entry.get("name", "")).removeprefix("models/"))
+        return out
+
+    def _pick_model(self) -> str | None:
+        """Best current stand-in for a retired model."""
+        candidates = [m for m in self.list_models() if "flash" in m or "pro" in m]
+        if not candidates:
+            return None
+        for token in self.PREFERRED:
+            for candidate in candidates:
+                if candidate.endswith(token) and "preview" not in candidate:
+                    return candidate
+        stable = [c for c in candidates if "preview" not in c and "exp" not in c]
+        return (stable or candidates)[0]
 
     def _payload(self, system: str, prompt: str) -> dict[str, Any]:
         return {
@@ -366,26 +407,48 @@ class GeminiProvider:
         }
 
     def complete(self, system: str, prompt: str) -> Any:
-        import httpx
-
         key = os.environ.get("GEMINI_API_KEY")
         if not key:
             raise EnrichmentError("GEMINI_API_KEY is not set")
-        url = f"{self.ENDPOINT}/{self.model}:generateContent?key={key}"
-        try:
-            response = httpx.post(url, json=self._payload(system, prompt), timeout=60.0)
-        except httpx.HTTPError as exc:
-            raise EnrichmentError(f"network error talking to Gemini: {exc}") from exc
+
+        response = self._post(system, prompt, key, self.model)
+
+        if response.status_code == 404:
+            # The configured model was retired. Find a live one and say which, so the
+            # deployment can be pinned deliberately instead of drifting again.
+            replacement = self._pick_model()
+            if replacement is None or replacement == self.model:
+                available = ", ".join(self.list_models()[:8]) or "none returned"
+                raise EnrichmentError(
+                    f"Gemini model '{self.model}' no longer exists and no replacement "
+                    f"was found. Set EMC_GEMINI_MODEL to one of: {available}"
+                )
+            self.model = replacement
+            response = self._post(system, prompt, key, replacement)
+
         if response.status_code == 429:
-            raise EnrichmentError("Gemini is rate limiting — try again shortly")
+            raise EnrichmentError("Gemini is rate limiting: try again shortly")
         if response.status_code >= 400:
-            raise EnrichmentError(f"Gemini returned {response.status_code}")
+            detail = ""
+            with contextlib.suppress(ValueError):
+                detail = response.json().get("error", {}).get("message", "")[:160]
+            raise EnrichmentError(f"Gemini returned {response.status_code}. {detail}".strip())
+
         data = response.json()
         try:
             text = data["candidates"][0]["content"]["parts"][0]["text"]
         except (KeyError, IndexError) as exc:
             raise EnrichmentError("unexpected Gemini response shape") from exc
         return _extract_json(text)
+
+    def _post(self, system: str, prompt: str, key: str, model: str) -> Any:
+        import httpx
+
+        url = f"{self.ENDPOINT}/{model}:generateContent?key={key}"
+        try:
+            return httpx.post(url, json=self._payload(system, prompt), timeout=60.0)
+        except httpx.HTTPError as exc:
+            raise EnrichmentError(f"network error talking to Gemini: {exc}") from exc
 
     def stream(self, system: str, prompt: str) -> Iterator[str]:
         import httpx
@@ -467,7 +530,7 @@ def enrich(
     provider: Provider | str | None = None,
     cache: Cache | None = None,
 ) -> Enrichment:
-    """Run the enrichment pass. Returns an `Enrichment` with `error` set on failure —
+    """Run the enrichment pass. Returns an `Enrichment` with `error` set on failure;
     callers keep the static explanation either way."""
     resolved = provider if not isinstance(provider, (str, type(None))) else get_provider(provider)
     if resolved is None:
@@ -522,7 +585,7 @@ def merge(
 ) -> list[Annotation]:
     """Layer LLM annotations over the static ones.
 
-    Static annotations always survive — the model supplements the parse tree, it never
+    Static annotations always survive. The model supplements the parse tree, it never
     replaces it. Where both describe a line, both are kept and the UI shows the source.
     """
     if not enrichment.ok or not enrichment.annotations:

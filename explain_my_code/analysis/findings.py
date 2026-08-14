@@ -1,6 +1,6 @@
 """Risk and quality findings.
 
-Scoped to things visible in a snippet with no project context — no import graph, no
+Scoped to things visible in a snippet with no project context. No import graph, no
 call sites outside the paste. Every rule states the threshold it tripped, because an
 unexplained "too complex" badge is not an explanation.
 """
@@ -110,7 +110,7 @@ def _structural(functions: list[FunctionMetrics]) -> list[Finding]:
                     "high-cognitive-load",
                     "Hard to follow",
                     f"`{function.name}` scores {function.cognitive} on cognitive complexity "
-                    f"(threshold {MAX_COGNITIVE}) — the branches are nested rather than sequential.",
+                    f"(threshold {MAX_COGNITIVE}). The branches are nested rather than sequential.",
                     "low",
                     _span_of(function),
                     "Flatten the nesting; sequential branches cost far less to read than nested ones.",
@@ -125,7 +125,7 @@ def _structural(functions: list[FunctionMetrics]) -> list[Finding]:
                     f"(threshold {MAX_FUNCTION_LINES}).",
                     "low",
                     _span_of(function),
-                    "Look for a section with its own name — that section is usually a function.",
+                    "Look for a section with its own name. That section is usually a function.",
                 )
             )
         if function.param_count > MAX_PARAMS:

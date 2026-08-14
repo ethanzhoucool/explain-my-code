@@ -1,4 +1,4 @@
-"""Pydantic request/response models — also the OpenAPI contract at /docs."""
+"""Pydantic request/response models: also the OpenAPI contract at /docs."""
 
 from __future__ import annotations
 
