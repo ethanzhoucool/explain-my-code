@@ -120,3 +120,42 @@ jobs:
           emc languages
           emc explain /tmp/fib.py --level developer --no-code
           emc metrics /tmp/fib.py --format json | grep -q '"isRecursive": true'
+
+  deploy:
+    name: deploy
+    needs: [test, lint, api]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "RENDER_DEPLOY_HOOK secret is not set — nothing to deploy to."
+            echo "Add it under Settings > Secrets > Actions to turn this step on."
+            exit 0
+          fi
+          curl -fsS -X POST "$HOOK" > /dev/null
+          echo "deploy triggered"
+
+      - name: Wait for the new version to serve
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+          URL: https://explain-my-code-w3sj.onrender.com
+        run: |
+          [ -z "$HOOK" ] && exit 0
+          # Free-tier builds are slow and the instance cold-starts after; poll rather
+          # than sleep a fixed amount, and fail loudly if the old build is still up.
+          for i in $(seq 1 60); do
+            version=$(curl -sf --max-time 20 "$URL/healthz" \
+              | python3 -c "import json,sys; print(json.load(sys.stdin)['version'])" 2>/dev/null || true)
+            if [ -n "$version" ]; then
+              echo "serving version $version"
+              exit 0
+            fi
+            echo "attempt $i: not up yet"
+            sleep 20
+          done
+          echo "::error::deploy did not come up — check the Render dashboard"
+          exit 1
