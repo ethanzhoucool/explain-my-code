@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main, v2-rebuild]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Never let a stray key in the environment turn a unit test into a paid API call.
+  ANTHROPIC_API_KEY: ""
+  GEMINI_API_KEY: ""
+
+jobs:
+  test:
+    name: test (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Confirm every grammar loaded
+        # A missing tree-sitter wheel degrades silently at runtime; fail loudly here.
+        run: |
+          python -c "
+          from explain_my_code.core import supported_languages
+          missing = [l['id'] for l in supported_languages() if not l['available']]
+          assert not missing, f'unavailable parsers: {missing}'
+          print('parsers ready:', [l['id'] for l in supported_languages()])
+          "
+
+      - name: Test
+        run: pytest --cov=explain_my_code --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage
+        if: matrix.python == '3.13'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv pip install --system -e ".[dev]"
+      - name: Ruff
+        run: ruff check explain_my_code tests
+      - name: Mypy
+        run: mypy explain_my_code --ignore-missing-imports
+        continue-on-error: true
+
+  api:
+    name: api smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv pip install --system -e ".[dev]"
+
+      - name: Boot the server and exercise the public endpoints
+        run: |
+          uvicorn explain_my_code.api.main:app --port 8000 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8000/healthz > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8000/healthz | tee /dev/stderr | grep -q '"status":"ok"'
+          curl -sf http://127.0.0.1:8000/openapi.json > /dev/null
+          curl -sf http://127.0.0.1:8000/ | grep -q "Explain My Code"
+          curl -sf -X POST http://127.0.0.1:8000/v1/explain \
+            -H 'content-type: application/json' \
+            -d '{"code":"def f(x):\n    return x * 2\n","level":"developer"}' \
+            | grep -q '"language":"python"'
+
+      - name: CLI smoke
+        run: |
+          printf 'def fib(n):\n    if n <= 1:\n        return n\n    return fib(n-1)+fib(n-2)\n' > /tmp/fib.py
+          emc languages
+          emc explain /tmp/fib.py --level developer --no-code
+          emc metrics /tmp/fib.py --format json | grep -q '"isRecursive": true'

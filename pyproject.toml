@@ -1,0 +1,85 @@
+[project]
+name = "explain-my-code"
+version = "2.0.0"
+description = "Static analysis that explains itself. Parses source to a language-neutral IR, then narrates it at three audience levels."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "ethan zhou" }]
+keywords = ["static-analysis", "ast", "tree-sitter", "code-explanation", "developer-tools"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.12",
+    "httpx>=0.27",
+    "anthropic>=0.40",
+    "typer>=0.15",
+    "rich>=13.9",
+    "sqlglot>=25.0",
+    # Core must be new enough for the newest grammar ABI on PyPI (currently 15).
+    "tree-sitter>=0.25",
+    "tree-sitter-javascript>=0.23",
+    "tree-sitter-java>=0.23",
+    "tree-sitter-cpp>=0.23",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[project.scripts]
+emc = "explain_my_code.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/ethanzhoucool/explain-my-code"
+Source = "https://github.com/ethanzhoucool/explain-my-code"
+Issues = "https://github.com/ethanzhoucool/explain-my-code/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["explain_my_code"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
+ignore = [
+    "E501",    # long lines are formatted by hand in the phrasebook tables
+    "B008",    # FastAPI/Typer depend on calls in argument defaults
+    "UP042",   # str+Enum is deliberate: it makes every Kind JSON-serialisable
+    "RUF012",  # adapter lookup tables are class-level config, not mutable state
+    "RUF001",  # × and ↻ are intentional in user-facing strings
+]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_ignores = true
+warn_redundant_casts = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+asyncio_mode = "auto"

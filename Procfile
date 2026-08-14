@@ -1,1 +1,1 @@
-web: gunicorn app:app
+web: uvicorn explain_my_code.api.main:app --host 0.0.0.0 --port $PORT --workers 1
