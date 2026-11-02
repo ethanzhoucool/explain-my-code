@@ -32,22 +32,31 @@ EXTENSIONS = {
 
 #: (pattern, language, weight). Weighted because single keywords overlap heavily:
 #: `class` says nothing, `def foo(self)` and `#include <` say a great deal.
+#:
+#: Every pattern must stay linear in the input, because detection runs on whatever an
+#: anonymous caller posts. Two shapes are banned here:
+#:   * `^\s*` under re.M: `\s` crosses newlines, so every line start rescans all the
+#:     whitespace after it, and a few KB of blank lines cost minutes. Leading
+#:     indentation is `[^\S\n]*` (whitespace other than a newline).
+#:   * an unbounded `.*` followed by more pattern, tried once per occurrence: on one
+#:     long line each attempt rescans to the end of it.
+_INDENT = r"^[^\S\n]*"
 SIGNATURES: list[tuple[re.Pattern[str], Language, int]] = [
-    (re.compile(r"^\s*def\s+\w+\s*\(.*\)\s*(->.*)?:", re.M), Language.PYTHON, 5),
-    (re.compile(r"^\s*(from\s+[\w.]+\s+)?import\s+\w+", re.M), Language.PYTHON, 3),
-    (re.compile(r"^\s*(async\s+)?def\s|self\.", re.M), Language.PYTHON, 2),
-    (re.compile(r'^\s*(elif|print\()', re.M), Language.PYTHON, 2),
+    (re.compile(_INDENT + r"def\s+\w+\s*\(.*\)[^)\n]*:", re.M), Language.PYTHON, 5),
+    (re.compile(_INDENT + r"(from\s+[\w.]+\s+)?import\s+\w+", re.M), Language.PYTHON, 3),
+    (re.compile(_INDENT + r"(async\s+)?def\s|self\.", re.M), Language.PYTHON, 2),
+    (re.compile(_INDENT + r"(elif|print\()", re.M), Language.PYTHON, 2),
     (re.compile(r"#include\s*[<\"]", re.M), Language.CPP, 6),
     (re.compile(r"\bstd::\w+|->\s*\w+\(|::\w+\s*\(", re.M), Language.CPP, 4),
     (re.compile(r"\b(nullptr|template\s*<|namespace\s+\w+)", re.M), Language.CPP, 4),
-    (re.compile(r"^\s*(public|private|protected)\s+(static\s+)?(class|void|int|final)", re.M), Language.JAVA, 5),
+    (re.compile(_INDENT + r"(public|private|protected)\s+(static\s+)?(class|void|int|final)", re.M), Language.JAVA, 5),
     (re.compile(r"\bSystem\.out\.print|\bpublic\s+static\s+void\s+main", re.M), Language.JAVA, 6),
-    (re.compile(r"^\s*package\s+[\w.]+;|^\s*import\s+java", re.M), Language.JAVA, 5),
-    (re.compile(r"@Override|\bnew\s+\w+<.*>\(", re.M), Language.JAVA, 3),
+    (re.compile(_INDENT + r"package\s+[\w.]+;|" + _INDENT + r"import\s+java", re.M), Language.JAVA, 5),
+    (re.compile(r"@Override|\bnew\s+\w+<.{0,200}>\(", re.M), Language.JAVA, 3),
     (re.compile(r"\b(const|let|var)\s+\w+\s*=", re.M), Language.JAVASCRIPT, 4),
     (re.compile(r"=>\s*[{(]|\bfunction\s*\w*\s*\(", re.M), Language.JAVASCRIPT, 3),
     (re.compile(r"\bconsole\.(log|error|warn)\b|\brequire\(|\bexport\s+(default|const)", re.M), Language.JAVASCRIPT, 5),
-    (re.compile(r"^\s*(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|WITH|CREATE\s+TABLE)\b", re.M | re.I), Language.SQL, 7),
+    (re.compile(_INDENT + r"(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|WITH|CREATE\s+TABLE)\b", re.M | re.I), Language.SQL, 7),
     (re.compile(r"\b(LEFT\s+JOIN|INNER\s+JOIN|GROUP\s+BY|ORDER\s+BY)\b", re.M | re.I), Language.SQL, 4),
 ]
 
