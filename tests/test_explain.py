@@ -27,6 +27,17 @@ def test_all_three_levels_produce_different_prose():
     assert texts[Level.ELI5] != texts[Level.BEGINNER] != texts[Level.DEVELOPER]
 
 
+@pytest.mark.parametrize("level", list(Level), ids=lambda level: level.value)
+def test_at_level_matches_a_fresh_explanation(level):
+    fresh = explain(SAMPLE, level=level)
+    reused = explain(SAMPLE, level=Level.ELI5).at_level(level)
+    assert reused.level is level
+    assert reused.summary == fresh.summary
+    assert [(line.line, line.text, line.kind) for line in reused.lines] == [
+        (line.line, line.text, line.kind) for line in fresh.lines
+    ]
+
+
 def test_eli5_avoids_jargon():
     jargon = ("cyclomatic", "asymptotic", "invariant", "idempotent", "polymorphism")
     result = explain(SAMPLE, level=Level.ELI5)

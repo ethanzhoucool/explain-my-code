@@ -116,6 +116,40 @@ class Explanation:
             out["ir"] = self.analysis.root.to_dict()
         return out
 
+    def at_level(self, level: Level | str) -> Explanation:
+        """The same parse and analysis, narrated for another audience.
+
+        Parsing and analysis do not depend on the level, so this only re-runs the
+        narration, and node ids in the result match this explanation's `analysis`.
+        LLM enrichment is level-specific and is not carried over.
+        """
+        level = Level(level)
+        started = time.perf_counter()
+        parsed = ParseResult(
+            self.analysis.root,
+            self.language,
+            self.source,
+            self.diagnostics,
+            self.analysis.parser,
+            self.analysis.degraded,
+        )
+        annotations = annotate(parsed, self.analysis, level)
+        summary = summarize(self.analysis, level)
+        lines = line_view(annotations, level)
+        elapsed = (time.perf_counter() - started) * 1000
+        return Explanation(
+            language=self.language,
+            level=level,
+            source=self.source,
+            summary=summary,
+            lines=lines,
+            annotations=annotations,
+            analysis=self.analysis,
+            diagnostics=self.diagnostics,
+            detection_confidence=self.detection_confidence,
+            timings_ms={"explain": elapsed, "total": elapsed},
+        )
+
 
 class SourceTooLarge(ValueError):
     pass

@@ -129,17 +129,19 @@ def explain_all_levels(payload: ExplainRequest) -> Any:
     """All three levels in one call.
 
     The parse and analysis passes are the expensive part and are level-independent, so
-    the client can switch levels instantly instead of paying a round trip per level.
+    they run once and only the narration is repeated per level. The client can switch
+    levels instantly instead of paying a round trip per level.
     """
+    first = explain(
+        payload.code,
+        language=payload.language,
+        level=Level.ELI5,
+        filename=payload.filename,
+        enrich=False,
+    )
     out: dict[str, Any] = {}
     for level in Level:
-        result = explain(
-            payload.code,
-            language=payload.language,
-            level=level,
-            filename=payload.filename,
-            enrich=False,
-        )
+        result = first if level is first.level else first.at_level(level)
         out[level.value] = {
             "summary": result.summary,
             "lines": [line.to_dict() for line in result.lines],
