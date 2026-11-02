@@ -14,7 +14,6 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from explain_my_code import __version__
 from explain_my_code.api.schemas import (
@@ -87,11 +86,11 @@ class BodySizeLimit:
     is counted as it arrives.
     """
 
-    def __init__(self, app: ASGIApp, limit: int = MAX_BODY_BYTES) -> None:
+    def __init__(self, app: Any, limit: int = MAX_BODY_BYTES) -> None:
         self.app = app
         self.limit = limit
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
@@ -106,7 +105,7 @@ class BodySizeLimit:
 
         received = 0
 
-        async def counted_receive() -> Message:
+        async def counted_receive() -> dict[str, Any]:
             nonlocal received
             message = await receive()
             if message["type"] == "http.request":
