@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from explain_my_code import __version__
 from explain_my_code.api.schemas import (
@@ -25,6 +26,7 @@ from explain_my_code.api.schemas import (
 )
 from explain_my_code.cache import default_cache
 from explain_my_code.core import (
+    MAX_SOURCE_BYTES,
     SourceTooLarge,
     detect_language,
     explain,
@@ -64,6 +66,61 @@ app = FastAPI(
         {"name": "meta", "description": "Capabilities and health."},
     ],
 )
+
+
+# -- request size --------------------------------------------------------------------
+
+#: Ten times the source limit. JSON escaping can turn one byte of source into six
+#: (`\u0001`), so this leaves room for the largest legitimate snippet, and it is still
+#: far below anything that would strain a small instance.
+MAX_BODY_BYTES = 10 * MAX_SOURCE_BYTES
+
+_TOO_LARGE = f"Request body is larger than {MAX_BODY_BYTES // 1_000_000}MB."
+
+
+class BodySizeLimit:
+    """Refuse oversized request bodies before they are read into memory.
+
+    The `code` validators only run after Starlette has buffered and parsed the whole
+    body, so without this a multi-gigabyte POST is held in memory in full just to be
+    told it is too long. A declared Content-Length is checked up front; a chunked body
+    is counted as it arrives.
+    """
+
+    def __init__(self, app: ASGIApp, limit: int = MAX_BODY_BYTES) -> None:
+        self.app = app
+        self.limit = limit
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        declared = dict(scope["headers"]).get(b"content-length", b"")
+        if declared.isdigit() and int(declared) > self.limit:
+            response = JSONResponse(
+                {"error": "payload_too_large", "detail": _TOO_LARGE}, status_code=413
+            )
+            await response(scope, receive, send)
+            return
+
+        received = 0
+
+        async def counted_receive() -> Message:
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.limit:
+                    # Raised while the endpoint reads its body, so FastAPI turns it into
+                    # a 413 response like any other HTTPException.
+                    raise HTTPException(status_code=413, detail=_TOO_LARGE)
+            return message
+
+        await self.app(scope, counted_receive, send)
+
+
+app.add_middleware(BodySizeLimit)
 
 
 # -- rate limiting -------------------------------------------------------------------

@@ -54,6 +54,40 @@ def test_oversized_payload_returns_413():
     assert response.status_code in (413, 422)
 
 
+def test_oversized_body_is_refused_before_it_is_read():
+    body = b'{"code": "' + b"a" * 3_000_000 + b'"}'
+    response = client.post("/v1/explain", content=body, headers={"content-type": "application/json"})
+    assert response.status_code == 413
+    assert response.json()["error"] == "payload_too_large"
+
+
+def test_oversized_chunked_body_is_refused():
+    """No Content-Length to check up front, so the body is counted as it streams in."""
+
+    def chunks():
+        yield b'{"code": "'
+        for _ in range(30):
+            yield b"a" * 100_000
+        yield b'"}'
+
+    response = client.post("/v1/explain", content=chunks(), headers={"content-type": "application/json"})
+    assert response.status_code == 413
+
+
+def test_largest_legitimate_snippet_still_fits_the_body_limit():
+    """JSON-escaping control characters is the worst case: one byte becomes six."""
+    from explain_my_code.core import MAX_SOURCE_BYTES
+
+    body = json.dumps({"code": "\x01" * (MAX_SOURCE_BYTES - 1), "language": "python"})
+    response = client.post("/v1/explain", content=body, headers={"content-type": "application/json"})
+    assert response.status_code == 200
+
+
+def test_detect_enforces_the_source_limit():
+    response = client.post("/v1/detect", json={"code": "x = 1\n" * 60_000})
+    assert response.status_code == 422
+
+
 def test_all_levels_returns_all_three():
     body = client.post("/v1/explain/all-levels", json={"code": PY}).json()
     assert {"eli5", "beginner", "developer"} <= set(body)
