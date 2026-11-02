@@ -271,6 +271,24 @@ async def load(urls):
     assert {"comprehension", "async-await", "error-handling"} <= concept_ids(analysis)
 
 
+def test_a_long_where_clause_is_one_boolean_run():
+    """sqlglot nests `a AND b AND ...` one level per operator; lowered as-is, a
+    1,000-term WHERE clause took ~9s and then hit the recursion limit."""
+    conditions = " AND ".join(f"c{i} = {i}" for i in range(1_000))
+    result = explain(f"SELECT a FROM t WHERE {conditions};", language=Language.SQL)
+    assert not result.analysis.degraded
+    runs = [n for n in result.analysis.root.walk() if n.kind.value == "boolop"]
+    assert [n.meta["operand_count"] for n in runs] == [1_000]
+
+
+def test_sql_and_python_score_boolean_runs_alike():
+    sql = analyze("SELECT 1 FROM t WHERE a = 1 AND (b = 2 OR c = 3) AND d = 4;", Language.SQL)
+    python = analyze("x = a == 1 and (b == 2 or c == 3) and d == 4\n")
+    assert (sql.metrics.cyclomatic, sql.metrics.cognitive) == (
+        python.metrics.cyclomatic, python.metrics.cognitive,
+    ) == (4, 2)
+
+
 def test_sql_concepts_are_language_scoped():
     python = analyze("def f():\n    return 1\n")
     assert not {c for c in concept_ids(python) if c.startswith("sql-")}

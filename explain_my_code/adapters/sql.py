@@ -486,21 +486,27 @@ class SqlLowerer:
         )
 
     def boolean(self, expression: Any) -> Node:
+        """One BOOLOP for a whole `a AND b AND c` run, as Python's `ast.BoolOp` gives.
+
+        sqlglot nests the run left-deep, one `And` per operator. Lowering that shape
+        made a node per operator, each re-rendering and re-measuring everything under
+        it, so a long WHERE clause was quadratic and hit the recursion limit. It also
+        scored cognitive complexity per operator rather than per run.
+        """
         operator = "AND" if isinstance(expression, exp.And) else "OR"
+        operands = list(expression.flatten())
         node = Node(
             kind=Kind.BOOLOP,
             span=self.span_for(expression),
             name=operator,
             meta={
                 "op": operator.lower(),
-                "operand_count": 2,
-                "operands": [
-                    self.sql_of(expression.this, 24),
-                    self.sql_of(expression.expression, 24),
-                ],
+                "operand_count": len(operands),
+                "operands": [self.sql_of(operand, 24) for operand in operands[:8]],
             },
         )
-        node.extend(self.children(expression))
+        for operand in operands:
+            node.extend(self.lower(operand))
         return node
 
     def function(self, expression: Any) -> Node:
