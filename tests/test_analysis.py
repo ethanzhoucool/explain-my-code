@@ -143,6 +143,159 @@ def process(groups):
     assert "log n" in function(analysis, "process").complexity_class
 
 
+MERGE_SORT = """
+def merge_sort(xs):
+    if len(xs) <= 1:
+        return xs
+    mid = len(xs) // 2
+    left = merge_sort(xs[:mid])
+    right = merge_sort(xs[mid:])
+    return merge(left, right)
+"""
+
+
+@pytest.mark.parametrize(
+    "language,source,name,expected",
+    [
+        (Language.PYTHON, MERGE_SORT, "merge_sort", "O(n log n)"),
+        (Language.PYTHON, """
+def quicksort(xs):
+    if len(xs) <= 1:
+        return xs
+    pivot = xs[0]
+    left = [x for x in xs[1:] if x < pivot]
+    right = [x for x in xs[1:] if x >= pivot]
+    return quicksort(left) + [pivot] + quicksort(right)
+""", "quicksort", "O(n log n)"),
+        (Language.PYTHON, """
+def quicksort(arr, lo, hi):
+    if lo < hi:
+        p = partition(arr, lo, hi)
+        quicksort(arr, lo, p - 1)
+        quicksort(arr, p + 1, hi)
+""", "quicksort", "O(n log n)"),
+        (Language.PYTHON, """
+def search(xs, lo, hi, target):
+    if lo > hi:
+        return -1
+    mid = (lo + hi) // 2
+    if xs[mid] < target:
+        return search(xs, mid + 1, hi, target)
+    return search(xs, lo, mid - 1, target)
+""", "search", "O(log n)"),
+        (Language.PYTHON, """
+def height(node):
+    if node is None:
+        return 0
+    return 1 + max(height(node.left), height(node.right))
+""", "height", "O(n)"),
+        (Language.PYTHON, """
+def find(node, key):
+    if node is None or node.key == key:
+        return node
+    if key < node.key:
+        return find(node.left, key)
+    return find(node.right, key)
+""", "find", "O(log n)"),
+        (Language.JAVASCRIPT, """
+function mergeSort(a) {
+  if (a.length <= 1) return a;
+  const mid = Math.floor(a.length / 2);
+  return merge(mergeSort(a.slice(0, mid)), mergeSort(a.slice(mid)));
+}
+""", "mergeSort", "O(n log n)"),
+        (Language.JAVASCRIPT, """
+function size(node) {
+  if (!node) return 0;
+  return 1 + size(node.left) + size(node.right);
+}
+""", "size", "O(n)"),
+        (Language.CPP, """
+int count(Node* n) {
+  if (!n) return 0;
+  return 1 + count(n->left) + count(n->right);
+}
+""", "count", "O(n)"),
+    ],
+    ids=["merge-sort", "quicksort", "quicksort-in-place", "binary-search", "tree-height",
+         "bst-find", "js-merge-sort", "js-tree-size", "cpp-tree-count"],
+)
+def test_divide_and_conquer_and_tree_recursion_are_not_exponential(language, source, name, expected):
+    """Two self-calls only blow up when each one shrinks the input by a constant. Halves,
+    partitions and tree children each get visited once, and calls in separate `return`s
+    never both run."""
+    analysis = analyze(source, language)
+    assert function(analysis, name).complexity_class == expected
+    assert "exponential-recursion" not in rules(analysis)
+
+
+@pytest.mark.parametrize(
+    "language,source,name,expected",
+    [
+        (Language.PYTHON, """
+def hanoi(n, a, b, c):
+    if n == 0:
+        return
+    hanoi(n - 1, a, c, b)
+    print(a, c)
+    hanoi(n - 1, b, a, c)
+""", "hanoi", "O(2^n)"),
+        (Language.PYTHON, """
+def paths(i, j):
+    if i == 0 or j == 0:
+        return 1
+    return paths(i - 1, j) + paths(i, j - 1)
+""", "paths", "O(2^n)"),
+        (Language.PYTHON, """
+def decode(s):
+    if not s:
+        return 1
+    total = decode(s[1:])
+    if len(s) > 1 and s[:2] < "27":
+        total += decode(s[2:])
+    return total
+""", "decode", "O(2^n)"),
+        (Language.PYTHON, """
+def trib(n):
+    if n < 3:
+        return 1
+    return trib(n - 1) + trib(n - 2) + trib(n - 3)
+""", "trib", "O(3^n)"),
+        (Language.JAVASCRIPT, "function fib(n) {\n  return n < 2 ? n : fib(n - 1) + fib(n - 2);\n}\n",
+         "fib", "O(2^n)"),
+    ],
+    ids=["hanoi", "grid-paths", "decode-ways", "tribonacci", "js-fib"],
+)
+def test_constant_step_branching_recursion_stays_exponential(language, source, name, expected):
+    analysis = analyze(source, language)
+    assert function(analysis, name).complexity_class == expected
+    assert "exponential-recursion" in rules(analysis)
+
+
+@pytest.mark.parametrize(
+    "language,source,expected",
+    [
+        (Language.PYTHON, "def f(xs):\n    total = sum(xs)\n    for x in xs:\n        print(x / total)\n",
+         "O(n)"),
+        (Language.PYTHON,
+         "def f(xs):\n    ys = sorted(xs)\n    for a in ys:\n        for b in ys:\n            print(a, b)\n",
+         "O(n²)"),
+        (Language.PYTHON, "def f(xs):\n    for x in sorted(xs):\n        print(x)\n", "O(n log n)"),
+        (Language.PYTHON, "def f(xs):\n    for x in xs:\n        print(max(xs))\n", "O(n²)"),
+        (Language.PYTHON,
+         "def f(groups):\n    out = []\n    for g in groups:\n        out.append(sorted(g))\n    return out\n",
+         "O(n² log n)"),
+        (Language.JAVASCRIPT,
+         "function f(xs) {\n  for (const x of xs.filter(Boolean)) {\n    console.log(x);\n  }\n}\n",
+         "O(n)"),
+    ],
+    ids=["linear-call-before-loop", "sort-before-nested-loops", "sorted-iterable",
+         "scan-inside-loop", "sort-inside-loop", "js-filtered-iterable"],
+)
+def test_library_costs_only_multiply_the_loops_they_run_inside(language, source, expected):
+    assert function(analyze(source, language), "f").complexity_class == expected
+
+
 # -- call graph --------------------------------------------------------------------
 
 
