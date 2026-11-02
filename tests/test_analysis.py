@@ -247,6 +247,22 @@ def test_unused_local_is_reported():
     assert "unused" in {symbol.name for symbol in analysis.symbols.unused}
 
 
+def test_unused_local_is_reported_in_javascript():
+    source = "function go() {\n  const used = 1;\n  const unused = 2;\n  return used;\n}\n"
+    analysis = analyze(source, Language.JAVASCRIPT)
+    assert {symbol.name for symbol in analysis.symbols.unused} == {"unused"}
+
+
+def test_naive_recursion_is_exponential_in_java_too():
+    analysis = analyze(
+        "class A {\n  int fib(int n) {\n    if (n < 2) return n;\n"
+        "    return fib(n - 1) + fib(n - 2);\n  }\n}\n",
+        Language.JAVA,
+    )
+    assert function(analysis, "fib").complexity_class == "O(2^n)"
+    assert "exponential-recursion" in rules(analysis)
+
+
 def test_underscore_prefixed_names_are_left_alone():
     analysis = analyze("def go():\n    _ignored = 1\n    return 2\n")
     assert "_ignored" not in {symbol.name for symbol in analysis.symbols.unused}

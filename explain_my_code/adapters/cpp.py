@@ -169,6 +169,19 @@ class CppAdapter(TreeSitterAdapter):
                     if (value := _field(declarator, "value")) is not None
                 ]
             return []
+        if kind in {Kind.FUNCTION, Kind.METHOD, Kind.CONSTRUCTOR}:
+            # The name sits at the bottom of the declarator chain rather than in a
+            # `name` field. Descend into the parameter list only, so the function's
+            # own name does not come back as a NAME child.
+            declarator = _field(ts_node, "declarator")
+            function_declarator = _find_function_declarator(ts_node)
+            params = (
+                _field(function_declarator, "parameters")
+                if function_declarator is not None
+                else None
+            )
+            rest = [c for c in ts_node.named_children if c != declarator]
+            return [params, *rest] if params is not None else rest
         return super().recurse_into(ts_node, kind)
 
     def _catch_type(self, ts_node) -> str:  # type: ignore[override]
