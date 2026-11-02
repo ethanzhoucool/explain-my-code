@@ -283,9 +283,32 @@ class TreeSitterAdapter:
         )
         node.extend(self.synth_children(ts_node, kind))
         if node_type not in self.LEAVES:
+            # Grammars without an `else_clause` (Java) put the else body straight in the
+            # `alternative` field. It gets the ELSE node JavaScript and C++ already have,
+            # so the walkthrough and the metrics see the same shape in every language.
+            alternative = _field(ts_node, "alternative") if kind is Kind.BRANCH else None
             for child in self.recurse_into(ts_node, kind):
-                node.extend(self.lower(child))
+                lowered = self.lower(child)
+                if (
+                    alternative is not None
+                    and child == alternative
+                    and child.type not in {"else_clause", "if_statement"}
+                ):
+                    lowered = [self._synthetic_else(ts_node, child, lowered)]
+                node.extend(lowered)
         return [node]
+
+    def _synthetic_else(self, if_node: TSNode, alternative: TSNode, body: list[Node]) -> Node:
+        keyword = next((c for c in if_node.children if c.type == "else"), alternative)
+        start_row, start_col = keyword.start_point
+        body_row, body_col = alternative.start_point
+        if body_row > start_row:
+            span = Span(start_row + 1, start_col, body_row, 10_000)
+        else:
+            span = Span(start_row + 1, start_col, body_row + 1, max(body_col, start_col + 1))
+        node = Node(kind=Kind.ELSE, span=span, name="else", meta=self.meta_else(alternative))
+        node.extend(body)
+        return node
 
     def synth_children(self, ts_node: TSNode, kind: Kind) -> list[Node]:
         """IR children with no 1:1 grammar node: parameters, mostly.
@@ -341,6 +364,12 @@ class TreeSitterAdapter:
 
     def kind_for(self, ts_node: TSNode) -> Kind | None:
         node_type = ts_node.type
+        if node_type == "else_clause" and any(
+            c.type == "if_statement" for c in ts_node.named_children
+        ):
+            # `else if` is one step of the chain, not an `else` holding a new `if`: let
+            # the inner `if` (marked `is_elif`) stand for it, as in Python and Java.
+            return None
         if node_type in self.LITERAL_TYPES:
             return Kind.LITERAL
         kind = self.KINDS.get(node_type)
@@ -444,12 +473,25 @@ class TreeSitterAdapter:
             is_guard = len(statements) == 1 and statements[0].type in {
                 "return_statement", "break_statement", "continue_statement", "throw_statement",
             }
+        # `is_elif` marks the `if` that IS an else branch, as the Python adapter does:
+        # inside an `else_clause` (JS, C++) or straight in the `alternative` field (Java).
+        parent = ts_node.parent
+        is_elif = parent is not None and (
+            parent.type == "else_clause"
+            or (parent.type == "if_statement" and _field(parent, "alternative") == ts_node)
+        )
         return {
             "condition": condition.strip("()"),
             "has_else": alternative is not None,
-            "is_elif": alternative is not None and alternative.type == "if_statement",
+            "is_elif": is_elif,
+            # Tree-sitter nests the rest of an if/else chain under the `if` it continues;
+            # Python lays it out beside it. The metrics need to know which.
+            "continues_parent": is_elif,
             "is_guard": is_guard,
         }
+
+    def meta_else(self, ts_node: TSNode) -> dict[str, Any]:
+        return {"continues_parent": True}
 
     def _meta_while(self, ts_node: TSNode) -> dict[str, Any]:
         condition = _field_text(ts_node, "condition", 56).strip("()")

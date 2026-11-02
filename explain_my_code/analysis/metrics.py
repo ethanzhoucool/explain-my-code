@@ -100,16 +100,28 @@ def cyclomatic_of(node: Node) -> int:
 
     A short-circuiting `a and b and c` contributes two, not one. Each operand after the
     first is its own branch at runtime.
+
+    For a function, functions nested inside it are scored separately and left out. For
+    the whole file every decision counts.
     """
     total = 1
-    for current in node.walk():
-        if current is not node and current.kind in CALLABLE_KINDS:
-            continue  # nested functions are scored separately
+    own_body_only = node.kind in CALLABLE_KINDS
+    stack = list(node.children)
+    while stack:
+        current = stack.pop()
+        if own_body_only and current.kind in CALLABLE_KINDS:
+            continue
         if current.kind is Kind.BOOLOP:
             total += max(1, int(current.meta.get("operand_count", 2)) - 1)
         elif current.kind in DECISION_KINDS:
             total += 1
+        stack.extend(current.children)
     return total
+
+
+def _continues_chain(node: Node) -> bool:
+    """`else` and `else if`: the rest of a decision that has already been counted."""
+    return node.kind is Kind.ELSE or bool(node.kind is Kind.BRANCH and node.meta.get("is_elif"))
 
 
 def cognitive_of(node: Node) -> int:
@@ -129,9 +141,12 @@ def cognitive_of(node: Node) -> int:
             increment = 0
             deeper = nesting
             if child.kind in NESTING_KINDS:
-                # `else if` is a continuation of one decision, not a fresh nesting level.
-                if child.meta.get("is_elif"):
+                if _continues_chain(child):
+                    # `else` / `else if` add one, with no nesting penalty, and their body
+                    # sits one level inside the chain's `if`. Tree-sitter hangs them under
+                    # that `if`, which already added the level; Python puts them beside it.
                     increment = 1
+                    deeper = nesting if child.meta.get("continues_parent") else nesting + 1
                 else:
                     increment = 1 + nesting
                     deeper = nesting + 1
@@ -145,16 +160,21 @@ def cognitive_of(node: Node) -> int:
 
 
 def max_nesting_of(node: Node) -> int:
+    """Deepest block nesting. For a function, nested functions are measured on their own."""
     deepest = 0
+    own_body_only = node.kind in CALLABLE_KINDS
 
     def visit(current: Node, depth: int) -> None:
         nonlocal deepest
         deepest = max(deepest, depth)
         for child in current.children:
             if child.kind in CALLABLE_KINDS:
-                visit(child, 0)
+                if not own_body_only:
+                    visit(child, 0)
             elif child.kind in NESTING_KINDS:
-                visit(child, depth + 1)
+                # An `else` / `else if` is at the same depth as the `if` it continues.
+                nested_in_chain = _continues_chain(child) and child.meta.get("continues_parent")
+                visit(child, depth if nested_in_chain else depth + 1)
             else:
                 visit(child, depth)
 
@@ -289,18 +309,47 @@ class FileMetrics:
         }
 
 
+def _comment_only_lines(comments: list[Node], raw_lines: list[str]) -> set[int]:
+    """Lines with nothing but comments and whitespace on them.
+
+    `x = 1  # one` is a code line that also carries a comment: it counts towards both
+    the comment lines and the code lines, not only the comments.
+    """
+    segments: dict[int, list[tuple[int, int]]] = {}
+    for node in comments:
+        span = node.span
+        for line in range(span.start_line, min(span.end_line, len(raw_lines)) + 1):
+            start = span.start_col if line == span.start_line else 0
+            end = span.end_col if line == span.end_line else len(raw_lines[line - 1])
+            segments.setdefault(line, []).append((start, end))
+    only: set[int] = set()
+    for line, parts in segments.items():
+        text = raw_lines[line - 1]
+        rest, cursor = [], 0
+        for start, end in sorted(parts):
+            rest.append(text[cursor:start])
+            cursor = max(cursor, end)
+        rest.append(text[cursor:])
+        # A blank line inside a block comment is already counted as blank.
+        if text.strip() and not "".join(rest).strip():
+            only.add(line)
+    return only
+
+
 def file_metrics(root: Node, source: str) -> FileMetrics:
     raw_lines = source.splitlines()
     blank = sum(1 for line in raw_lines if not line.strip())
+    comments = list(root.find(Kind.COMMENT))
     comment_lines = {
         line
-        for node in root.find(Kind.COMMENT)
+        for node in comments
         for line in range(node.span.start_line, node.span.end_line + 1)
     }
+    comment_only = _comment_only_lines(comments, raw_lines)
     functions = [n for n in root.walk() if n.kind in CALLABLE_KINDS]
     return FileMetrics(
         lines=len(raw_lines),
-        code_lines=max(len(raw_lines) - blank - len(comment_lines), 0),
+        code_lines=max(len(raw_lines) - blank - len(comment_only), 0),
         comment_lines=len(comment_lines),
         blank_lines=blank,
         cyclomatic=cyclomatic_of(root),

@@ -75,6 +75,87 @@ def shallow(x):
     assert function(analysis, "shallow").max_nesting == 0
 
 
+CHAIN_SHAPES = {
+ "loop-if-else": {
+  "python": "def f(xs):\n    for x in xs:\n        if x:\n            a()\n        else:\n            b()\n",
+  "javascript": "function f(xs) {\n  for (const x of xs) {\n    if (x) {\n      a();\n    } else {\n      b();\n    }\n  }\n}\n",
+  "java": "class A {\n  void f(int[] xs) {\n    for (int x : xs) {\n      if (x > 0) {\n        a();\n      } else {\n        b();\n      }\n    }\n  }\n}\n",
+  "cpp": "void f(std::vector<int> xs) {\n  for (int x : xs) {\n    if (x) {\n      a();\n    } else {\n      b();\n    }\n  }\n}\n",
+ },
+ "if-inside-elif": {
+  "python": "def f(a, b, c):\n    if a:\n        x()\n    elif b:\n        if c:\n            y()\n",
+  "javascript": "function f(a, b, c) {\n  if (a) {\n    x();\n  } else if (b) {\n    if (c) {\n      y();\n    }\n  }\n}\n",
+  "java": "class A {\n  void f(boolean a, boolean b, boolean c) {\n    if (a) {\n      x();\n    } else if (b) {\n      if (c) {\n        y();\n      }\n    }\n  }\n}\n",
+  "cpp": "void f(bool a, bool b, bool c) {\n  if (a) {\n    x();\n  } else if (b) {\n    if (c) {\n      y();\n    }\n  }\n}\n",
+ },
+ "five-arm-chain": {
+  "python": "def f(n):\n    if n == 1:\n        return 1\n    elif n == 2:\n        return 2\n    elif n == 3:\n        return 3\n    elif n == 4:\n        return 4\n    else:\n        return 5\n",
+  "javascript": "function f(n) {\n  if (n === 1) { return 1; }\n  else if (n === 2) { return 2; }\n  else if (n === 3) { return 3; }\n  else if (n === 4) { return 4; }\n  else { return 5; }\n}\n",
+  "java": "class A {\n  int f(int n) {\n    if (n == 1) { return 1; }\n    else if (n == 2) { return 2; }\n    else if (n == 3) { return 3; }\n    else if (n == 4) { return 4; }\n    else { return 5; }\n  }\n}\n",
+  "cpp": "int f(int n) {\n  if (n == 1) { return 1; }\n  else if (n == 2) { return 2; }\n  else if (n == 3) { return 3; }\n  else if (n == 4) { return 4; }\n  else { return 5; }\n}\n",
+ },
+ "nested-if-in-else-block": {
+  "javascript": "function f(a, c) {\n  if (a) {\n    x();\n  } else {\n    y();\n    if (c) {\n      z();\n    }\n  }\n}\n",
+  "java": "class A {\n  void f(boolean a, boolean c) {\n    if (a) {\n      x();\n    } else {\n      y();\n      if (c) {\n        z();\n      }\n    }\n  }\n}\n",
+  "cpp": "void f(bool a, bool c) {\n  if (a) {\n    x();\n  } else {\n    y();\n    if (c) {\n      z();\n    }\n  }\n}\n",
+  "python": "def f(a, c):\n    if a:\n        x()\n    else:\n        y()\n        if c:\n            z()\n",
+ },
+}
+
+#: (cyclomatic, cognitive, max nesting), per SonarSource's rules for cognitive: `else`
+#: and `else if` add one with no nesting penalty, and their bodies are nested one level.
+CHAIN_EXPECTED = {
+    "loop-if-else": (3, 4, 2),
+    "if-inside-elif": (4, 4, 2),
+    "five-arm-chain": (5, 5, 1),
+    "nested-if-in-else-block": (3, 4, 2),
+}
+
+
+@pytest.mark.parametrize("shape", list(CHAIN_SHAPES))
+@pytest.mark.parametrize("language", ["python", "javascript", "java", "cpp"])
+def test_if_else_chains_score_the_same_in_every_language(shape, language):
+    """Tree-sitter nests `else` / `else if` under the `if` they continue, so each arm
+    used to count as a deeper level: a five-arm JS chain scored cognitive 36 and
+    nesting 8 where the same Python scores 5 and 1."""
+    measured = function(analyze(CHAIN_SHAPES[shape][language], Language(language)), "f")
+    assert (measured.cyclomatic, measured.cognitive, measured.max_nesting) == CHAIN_EXPECTED[shape]
+
+
+def test_nested_functions_are_scored_on_their_own():
+    analysis = analyze("""
+def outer(rows):
+    def inner(row):
+        for cell in row:
+            for part in cell:
+                if part:
+                    return part
+    return inner
+""")
+    outer, inner = function(analysis, "outer"), function(analysis, "inner")
+    assert (outer.cyclomatic, outer.max_nesting) == (1, 0)
+    assert (inner.cyclomatic, inner.max_nesting) == (4, 3)
+    assert analysis.metrics.cyclomatic == 4, "the file total still counts every decision"
+
+
+@pytest.mark.parametrize(
+    "language,source,code_lines",
+    [
+        (Language.PYTHON, "x = 1  # one\ny = 2  # two\n# a note\n", 2),
+        (Language.JAVASCRIPT, "const x = 1; // one\n/* a\n\n   note */\nconst y = 2;\n", 2),
+        (Language.CPP, "int x = 1; /* one */\n// a note\nint y = /* two */ 2;\n", 2),
+    ],
+    ids=["python", "javascript", "cpp"],
+)
+def test_lines_with_trailing_comments_are_still_code(language, source, code_lines):
+    assert analyze(source, language).metrics.code_lines == code_lines
+
+
+def test_java_else_gets_explained():
+    result = explain(CHAIN_SHAPES["nested-if-in-else-block"]["java"], language=Language.JAVA)
+    assert any(line.kind.value == "else" and line.line == 5 for line in result.lines)
+
+
 def test_maintainability_index_is_bounded():
     assert maintainability_index(0, 1, 0) == 100.0
     assert 0.0 <= maintainability_index(90_000, 400, 5000) <= 100.0
