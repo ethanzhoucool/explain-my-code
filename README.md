@@ -220,8 +220,10 @@ emc explain solver.py --enrich
 | Variable | Purpose |
 |---|---|
 | `ANTHROPIC_API_KEY` | Claude (default provider, `claude-opus-5`) |
-| `GEMINI_API_KEY` | Gemini (`gemini-2.0-flash`) |
+| `GEMINI_API_KEY` | Gemini (`gemini-flash-latest`) |
 | `EMC_PROVIDER` | Force `anthropic` or `gemini` |
+| `EMC_ANTHROPIC_MODEL` | Override the Claude model |
+| `EMC_GEMINI_MODEL` | Override the Gemini model. If it has been retired, the provider retries once with a current one and reports it as `enrichment.model` |
 | `EMC_CACHE_DIR` | Persist the enrichment cache to disk |
 | `EMC_RATE_LIMIT` | Requests per minute per IP (default 60) |
 
