@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 
 from explain_my_code import __version__
 from explain_my_code.api.schemas import (
@@ -183,6 +184,10 @@ async def explain_stream(payload: ExplainRequest) -> StreamingResponse:
 
     The static pass takes about a millisecond, so the page can render fully before the
     model has produced a token. The LLM is a progressive enhancement, not a dependency.
+
+    This handler is async, so everything blocking runs in the threadpool: the analysis
+    is CPU-bound and the provider SDKs stream over blocking HTTP. Run inline, a single
+    enrichment stalled every other request on the event loop until the model finished.
     """
 
     async def events() -> AsyncIterator[str]:
@@ -190,7 +195,8 @@ async def explain_stream(payload: ExplainRequest) -> StreamingResponse:
             return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
         try:
-            result = explain(
+            result = await run_in_threadpool(
+                explain,
                 payload.code,
                 language=payload.language,
                 level=payload.level,
@@ -215,7 +221,7 @@ async def explain_stream(payload: ExplainRequest) -> StreamingResponse:
         yield sse("enrich_start", {"provider": provider.name, "model": provider.model})
         prompt = build_context(result.analysis, result.level, result.source)
         try:
-            for chunk in provider.stream(SYSTEM_PROMPT, prompt):
+            async for chunk in iterate_in_threadpool(provider.stream(SYSTEM_PROMPT, prompt)):
                 yield sse("delta", {"text": chunk})
         except Exception as exc:  # provider SDKs raise their own error types
             yield sse("error", {"error": "enrichment_failed", "detail": str(exc)})

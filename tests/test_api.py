@@ -129,6 +129,50 @@ def test_streaming_reports_a_missing_provider_without_failing_the_request(monkey
     assert "no_provider" in body
 
 
+class _SlowProvider:
+    """Streams like a real SDK: blocking network reads between chunks."""
+
+    name = "fake"
+    model = "fake-model"
+
+    def stream(self, system, prompt):
+        import time
+
+        for chunk in ('{"summary": "', "slow", '"}'):
+            time.sleep(0.3)
+            yield chunk
+
+
+async def test_streaming_enrichment_does_not_block_other_requests(monkeypatch):
+    """A blocking provider stream used to run on the event loop itself, so every other
+    request (here /healthz) waited for the model to finish."""
+    import asyncio
+    import time
+
+    import httpx
+
+    monkeypatch.setattr("explain_my_code.api.main.get_provider", lambda name=None: _SlowProvider())
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        started = time.perf_counter()
+
+        async def stream() -> tuple[str, float]:
+            response = await ac.post("/v1/explain/stream", json={"code": PY, "enrich": True})
+            return response.text, time.perf_counter() - started
+
+        async def health() -> float:
+            await asyncio.sleep(0.1)  # let the stream start first
+            response = await ac.get("/healthz")
+            assert response.status_code == 200
+            return time.perf_counter() - started
+
+        (body, stream_done), health_done = await asyncio.gather(stream(), health())
+
+    assert "event: delta" in body and "slow" in body
+    assert stream_done >= 0.9
+    assert health_done < 0.6, f"/healthz waited {health_done:.2f}s behind the stream"
+
+
 # -- cache -------------------------------------------------------------------------
 
 
