@@ -8,12 +8,23 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 
 from explain_my_code.adapters.base import get_adapter, load_all, registered_languages
 from explain_my_code.analysis.pipeline import Analysis, analyze
-from explain_my_code.ir import Annotation, Diagnostic, Language, Level, ParseResult
+from explain_my_code.ir import (
+    Annotation,
+    Diagnostic,
+    Kind,
+    Language,
+    Level,
+    Node,
+    ParseResult,
+    Span,
+)
 from explain_my_code.narrate.annotate import LineExplanation, annotate, line_view, summarize
 
 load_all()
@@ -149,19 +160,17 @@ def explain(
         language = Language(language)
 
     timings: dict[str, float] = {}
-
-    started = time.perf_counter()
-    parsed: ParseResult = get_adapter(language).parse(code)
-    timings["parse"] = (time.perf_counter() - started) * 1000
-
-    started = time.perf_counter()
-    analysis = analyze(parsed)
-    timings["analyze"] = (time.perf_counter() - started) * 1000
-
-    started = time.perf_counter()
-    annotations = annotate(parsed, analysis, level)
-    summary = summarize(analysis, level)
-    timings["explain"] = (time.perf_counter() - started) * 1000
+    adapter = get_adapter(language)
+    try:
+        parsed, analysis, annotations, summary = _static_pass(adapter.parse, code, level, timings)
+    except RecursionError:
+        # The lowering and analysis passes recurse over the tree, so pathological
+        # nesting (a thousand-term `a + b + ...` chain, thousands of nested brackets)
+        # can exhaust the interpreter's recursion limit. That is reported the way a
+        # parse failure is, instead of failing the whole request.
+        timings.clear()
+        too_deep = partial(_too_deep_to_explain, language=language, parser=adapter.parser_name)
+        parsed, analysis, annotations, summary = _static_pass(too_deep, code, level, timings)
 
     enrichment = None
     if enrich:
@@ -193,6 +202,49 @@ def explain(
         detection_confidence=confidence,
         timings_ms=timings,
         enrichment=enrichment,
+    )
+
+
+TOO_DEEP_MESSAGE = (
+    "This code is nested too deeply to explain: an expression or block goes hundreds of "
+    "levels deep (a very long `a + b + c + ...` chain counts). Split it up and try again."
+)
+
+
+def _static_pass(
+    parse: Callable[[str], ParseResult], code: str, level: Level, timings: dict[str, float]
+) -> tuple[ParseResult, Analysis, list[Annotation], str]:
+    started = time.perf_counter()
+    parsed = parse(code)
+    timings["parse"] = (time.perf_counter() - started) * 1000
+
+    started = time.perf_counter()
+    analysis = analyze(parsed)
+    timings["analyze"] = (time.perf_counter() - started) * 1000
+
+    started = time.perf_counter()
+    annotations = annotate(parsed, analysis, level)
+    summary = summarize(analysis, level)
+    timings["explain"] = (time.perf_counter() - started) * 1000
+    return parsed, analysis, annotations, summary
+
+
+def _too_deep_to_explain(source: str, *, language: Language, parser: str) -> ParseResult:
+    """An empty, degraded parse that carries the reason as an error diagnostic."""
+    lines = source.splitlines()
+    root = Node(
+        kind=Kind.MODULE,
+        span=Span(1, 0, max(len(lines), 1), 0),
+        name="module",
+        meta={"unparsed": True},
+    )
+    return ParseResult(
+        root,
+        language,
+        source,
+        [Diagnostic(TOO_DEEP_MESSAGE, severity="error")],
+        parser,
+        degraded=True,
     )
 
 
