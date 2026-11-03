@@ -212,6 +212,36 @@ class PythonLowerer:
     def children_of(self, node: ast.AST) -> list[Node]:
         return self.generic(node)
 
+    def target_reads(self, target: ast.AST) -> list[Node]:
+        """What an assignment target reads, as opposed to binds.
+
+        `xs[i] = v` binds nothing: it reads `xs` and `i`. `obj.x = v` reads `obj`. A bare
+        name, or a name inside a tuple being unpacked, is a binding and is skipped.
+        """
+        if isinstance(target, (ast.Tuple, ast.List)):
+            return [n for element in target.elts for n in self.target_reads(element)]
+        if isinstance(target, ast.Starred):
+            return self.target_reads(target.value)
+        if isinstance(target, (ast.Subscript, ast.Attribute)):
+            return self.visit(target)
+        return []
+
+    def definition_time_reads(self, node: ast.AST) -> list[Node]:
+        """Expressions a `def` or `class` statement evaluates where it stands.
+
+        Decorators, parameter defaults and base classes run in the enclosing scope when
+        the definition executes, not inside the body. They come back as siblings that
+        precede the definition, so `@app.get(...)` reads `app` at module level instead
+        of looking like a call made by the decorated function.
+        """
+        expressions: list[ast.AST] = list(getattr(node, "decorator_list", []))
+        if isinstance(node, ast.ClassDef):
+            expressions += [*node.bases, *(k.value for k in node.keywords)]
+        else:
+            arguments = node.args  # type: ignore[attr-defined]
+            expressions += [*arguments.defaults, *(d for d in arguments.kw_defaults if d)]
+        return [n for expression in expressions for n in self.visit(expression)]
+
     # -- definitions ----------------------------------------------------------
 
     def _function(self, node: ast.FunctionDef | ast.AsyncFunctionDef, is_async: bool) -> list[Node]:
@@ -265,7 +295,7 @@ class PythonLowerer:
                 )
             )
         fn.extend(self.visit_body(node.body, owns_docstring=True))
-        return [fn]
+        return [*self.definition_time_reads(node), fn]
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> list[Node]:
         return self._function(node, is_async=False)
@@ -309,7 +339,7 @@ class PythonLowerer:
             if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 stmt._emc_in_class = True  # type: ignore[attr-defined]
         cls.extend(self.visit_body(node.body, owns_docstring=True))
-        return [cls]
+        return [*self.definition_time_reads(node), cls]
 
     def visit_Lambda(self, node: ast.Lambda) -> list[Node]:
         params = _params(node.args)
@@ -429,6 +459,8 @@ class PythonLowerer:
         )
         loop.extend(self.visit(node.test))
         loop.extend(self.visit_body(node.body))
+        if node.orelse:
+            loop.extend(self.visit_body(node.orelse))
         return [loop]
 
     def visit_Break(self, node: ast.Break) -> list[Node]:
@@ -452,14 +484,14 @@ class PythonLowerer:
         return [ret]
 
     def _yield(self, node: ast.Yield | ast.YieldFrom, delegated: bool) -> list[Node]:
-        return [
-            Node(
-                kind=Kind.YIELD,
-                span=_span(node),
-                name="yield",
-                meta={"value": _repr(node.value), "delegated": delegated},
-            )
-        ]
+        yielded = Node(
+            kind=Kind.YIELD,
+            span=_span(node),
+            name="yield",
+            meta={"value": _repr(node.value), "delegated": delegated},
+        )
+        yielded.extend(self.children_of(node))
+        return [yielded]
 
     def visit_Yield(self, node: ast.Yield) -> list[Node]:
         return self._yield(node, delegated=False)
@@ -469,16 +501,16 @@ class PythonLowerer:
 
     def visit_Raise(self, node: ast.Raise) -> list[Node]:
         exc = _callee_name(node.exc.func) if isinstance(node.exc, ast.Call) else _repr(node.exc, 32)
-        return [
-            Node(
-                kind=Kind.THROW,
-                span=_span(node),
-                name="raise",
-                meta={"exception": exc, "reraises": node.exc is None,
-                      "message": _repr(node.exc.args[0], 48)
-                      if isinstance(node.exc, ast.Call) and node.exc.args else ""},
-            )
-        ]
+        throw = Node(
+            kind=Kind.THROW,
+            span=_span(node),
+            name="raise",
+            meta={"exception": exc, "reraises": node.exc is None,
+                  "message": _repr(node.exc.args[0], 48)
+                  if isinstance(node.exc, ast.Call) and node.exc.args else ""},
+        )
+        throw.extend(self.children_of(node))
+        return [throw]
 
     def visit_Try(self, node: ast.Try) -> list[Node]:
         try_node = Node(
@@ -557,6 +589,7 @@ class PythonLowerer:
             name="match",
             meta={"subject": _repr(node.subject, 40), "case_count": len(node.cases)},
         )
+        match_node.extend(self.visit(node.subject))
         for case in node.cases:
             case_node = Node(
                 kind=Kind.CASE,
@@ -567,6 +600,8 @@ class PythonLowerer:
                     "has_guard": case.guard is not None,
                 },
             )
+            if case.guard is not None:
+                case_node.extend(self.visit(case.guard))
             case_node.extend(self.visit_body(case.body))
             match_node.add(case_node)
         return [match_node]
@@ -595,6 +630,8 @@ class PythonLowerer:
             },
         )
         assign.extend(self.visit(node.value))
+        for target in node.targets:
+            assign.extend(self.target_reads(target))
         return [assign]
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> list[Node]:
@@ -610,6 +647,7 @@ class PythonLowerer:
         )
         if node.value is not None:
             decl.extend(self.visit(node.value))
+        decl.extend(self.target_reads(node.target))
         return [decl]
 
     def visit_AugAssign(self, node: ast.AugAssign) -> list[Node]:
@@ -626,6 +664,7 @@ class PythonLowerer:
             },
         )
         aug.extend(self.visit(node.value))
+        aug.extend(self.target_reads(node.target))
         return [aug]
 
     def visit_Call(self, node: ast.Call) -> list[Node]:
@@ -646,6 +685,12 @@ class PythonLowerer:
                 "qualified": _repr(node.func, 48),
             },
         )
+        # The callee itself is this node's name, but whatever it hangs off is a real
+        # read: the receiver in `logger.info(...)`, the inner call in `helper().strip()`.
+        if isinstance(node.func, ast.Attribute):
+            call.extend(self.visit(node.func.value))
+        elif not isinstance(node.func, ast.Name):
+            call.extend(self.visit(node.func))
         for arg in [*node.args, *[k.value for k in node.keywords]]:
             call.extend(self.visit(arg))
         return [call]
@@ -717,6 +762,7 @@ class PythonLowerer:
             },
         )
         sub.extend(self.visit(node.value))
+        sub.extend(self.visit(node.slice))
         return [sub]
 
     def visit_Attribute(self, node: ast.Attribute) -> list[Node]:
@@ -792,15 +838,15 @@ class PythonLowerer:
         return [unop]
 
     def _collection(self, node: ast.AST, coll_type: str, size: int) -> list[Node]:
-        return [
-            Node(
-                kind=Kind.COLLECTION,
-                span=_span(node),
-                name=coll_type,
-                meta={"collection_type": coll_type, "size": size,
-                      "is_empty": size == 0, "value": _repr(node, 40)},
-            )
-        ]
+        collection = Node(
+            kind=Kind.COLLECTION,
+            span=_span(node),
+            name=coll_type,
+            meta={"collection_type": coll_type, "size": size,
+                  "is_empty": size == 0, "value": _repr(node, 40)},
+        )
+        collection.extend(self.children_of(node))
+        return [collection]
 
     def visit_List(self, node: ast.List) -> list[Node]:
         return self._collection(node, "list", len(node.elts))
@@ -816,27 +862,29 @@ class PythonLowerer:
 
     def visit_JoinedStr(self, node: ast.JoinedStr) -> list[Node]:
         slots = [f for f in node.values if isinstance(f, ast.FormattedValue)]
-        return [
-            Node(
-                kind=Kind.FSTRING,
-                span=_span(node),
-                name="f-string",
-                meta={"slot_count": len(slots),
-                      "slots": [_repr(s.value, 24) for s in slots]},
-            )
-        ]
+        fstring = Node(
+            kind=Kind.FSTRING,
+            span=_span(node),
+            name="f-string",
+            meta={"slot_count": len(slots),
+                  "slots": [_repr(s.value, 24) for s in slots]},
+        )
+        for slot in slots:
+            fstring.extend(self.visit(slot.value))
+        return [fstring]
 
     def visit_Starred(self, node: ast.Starred) -> list[Node]:
-        return [
-            Node(kind=Kind.SPREAD, span=_span(node), name="*",
-                 meta={"value": _repr(node.value, 32)})
-        ]
+        spread = Node(kind=Kind.SPREAD, span=_span(node), name="*",
+                      meta={"value": _repr(node.value, 32)})
+        spread.extend(self.visit(node.value))
+        return [spread]
 
     def visit_Delete(self, node: ast.Delete) -> list[Node]:
-        return [
-            Node(kind=Kind.DELETE, span=_span(node), name="del",
-                 meta={"targets": [_repr(t, 24) for t in node.targets]})
-        ]
+        delete = Node(kind=Kind.DELETE, span=_span(node), name="del",
+                      meta={"targets": [_repr(t, 24) for t in node.targets]})
+        for target in node.targets:
+            delete.extend(self.target_reads(target))
+        return [delete]
 
     def visit_Global(self, node: ast.Global) -> list[Node]:
         return [
@@ -851,12 +899,12 @@ class PythonLowerer:
         ]
 
     def visit_Assert(self, node: ast.Assert) -> list[Node]:
-        return [
-            Node(kind=Kind.THROW, span=_span(node), name="assert",
-                 meta={"exception": "AssertionError", "is_assert": True,
-                       "condition": _repr(node.test, 40),
-                       "message": _repr(node.msg, 40)})
-        ]
+        check = Node(kind=Kind.THROW, span=_span(node), name="assert",
+                     meta={"exception": "AssertionError", "is_assert": True,
+                           "condition": _repr(node.test, 40),
+                           "message": _repr(node.msg, 40)})
+        check.extend(self.children_of(node))
+        return [check]
 
     # -- module system -----------------------------------------------------------
 

@@ -400,6 +400,77 @@ def test_unused_local_is_reported():
     assert "unused" in {symbol.name for symbol in analysis.symbols.unused}
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        "def log(msg):\n    logger = get_logger()\n    logger.info(msg)\n",
+        "def get(xs, i):\n    return xs[i]\n",
+        "def head(xs, n):\n    return xs[:n]\n",
+        "def fill(xs, i, v):\n    xs[i] = v\n",
+        "def setx(obj, v):\n    obj.x = v\n",
+        "def bump(d, k):\n    d[k] += 1\n",
+        "def drop(d, k):\n    del d[k]\n",
+        "def pair(a, b):\n    return [a, b]\n",
+        "def pair(a, b):\n    return a, b\n",
+        "def entry(k, v):\n    return {k: v}\n",
+        "def copy(xs):\n    return [*xs]\n",
+        'def greet(name):\n    return f"hi {name}"\n',
+        "def apply(fn, x):\n    return fn(x)\n",
+        "def dispatch(handlers, name, x):\n    return handlers[name](x)\n",
+        "def check(x, why):\n    assert x > 0, why\n",
+        "def fail(err, msg):\n    raise ValueError(msg) from err\n",
+        "def gen(x):\n    yield x\n",
+        'def route(cmd, verbose):\n    match cmd:\n        case "go" if verbose:\n            return 1\n',
+        "LIMIT = 5\n\ndef take(n=LIMIT):\n    return n\n",
+        'app = Flask(__name__)\n\n@app.route("/")\ndef index():\n    return "hi"\n',
+        "Base = make_base()\n\nclass Model(Base):\n    pass\n",
+    ],
+    ids=["method-receiver", "index", "slice", "index-store", "attribute-store", "index-augassign",
+         "del-index", "list", "tuple", "dict", "starred", "f-string", "callback", "subscript-call",
+         "assert", "raise-from", "yield", "match", "default-value", "decorator", "base-class"],
+)
+def test_python_reads_are_not_reported_as_unused(source):
+    """Each of these reads every name it binds. The Python lowering used to drop the
+    sub-expression doing the reading, which made the name look assigned-but-unread."""
+    assert [symbol.name for symbol in analyze(source).symbols.unused] == []
+
+
+def test_storing_into_a_container_does_not_shadow_it():
+    analysis = analyze("""
+memo = {}
+
+def fib(n):
+    if n in memo:
+        return memo[n]
+    memo[n] = fib(n - 1) + fib(n - 2)
+    return memo[n]
+""")
+    assert "shadowed-name" not in rules(analysis)
+
+
+@pytest.mark.parametrize(
+    "source,caller,callee",
+    [
+        ("def go():\n    return helper().strip()\n\ndef helper():\n    return ''\n", "go", "helper"),
+        ("def go(x):\n    return [helper(x)]\n\ndef helper(x):\n    return x\n", "go", "helper"),
+        ("def go(xs):\n    while xs:\n        xs.pop()\n    else:\n        helper()\n\n"
+         "def helper():\n    return 1\n", "go", "helper"),
+        ("def go():\n    raise make_error()\n\ndef make_error():\n    return ValueError()\n",
+         "go", "make_error"),
+    ],
+    ids=["chained-call", "call-in-list", "while-else", "raised-call"],
+)
+def test_python_call_graph_sees_nested_calls(source, caller, callee):
+    graph = analyze(source).call_graph
+    assert f"module.{callee}" in graph.edges[f"module.{caller}"]
+
+
+def test_decorator_calls_belong_to_the_enclosing_scope():
+    """`@app.route(...)` runs at definition time, so it is not a call `index` makes."""
+    analysis = analyze('app = Flask(__name__)\n\n@app.route("/")\ndef index():\n    return "hi"\n')
+    assert analysis.call_graph.edges["module.index"] == []
+
+
 def test_underscore_prefixed_names_are_left_alone():
     analysis = analyze("def go():\n    _ignored = 1\n    return 2\n")
     assert "_ignored" not in {symbol.name for symbol in analysis.symbols.unused}
