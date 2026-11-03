@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from explain_my_code.core import SourceTooLarge, detect_language, explain, supported_languages
@@ -132,6 +134,31 @@ def test_detection_from_filename_wins(filename, expected):
 
 def test_detection_reports_low_confidence_on_ambiguous_input():
     assert detect_language("x = 1").confidence < 1.0
+
+
+def test_detection_still_reads_indented_and_crlf_lines():
+    method = "class A:\r\n    def size(self) -> int:\r\n        return 1\r\n"
+    assert detect_language(method).language is Language.PYTHON
+    assert detect_language("\n\n   SELECT a\n   FROM t\n").language is Language.SQL
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "\n" * 20_000,
+        " \t\r\n" * 5_000,
+        "def a(" + ")->" * 7_000,
+        "new A<>" * 15_000,
+    ],
+    ids=["blank-lines", "mixed-whitespace", "unclosed-def-header", "generic-new"],
+)
+def test_detection_stays_fast_on_adversarial_input(source):
+    """Detection runs on whatever an anonymous caller posts. `^\\s*` under re.M used to
+    rescan every following blank line from each line start: 20KB of newlines took
+    about 40 seconds, and the 200KB the API accepts would take about an hour."""
+    started = time.perf_counter()
+    detect_language(source)
+    assert time.perf_counter() - started < 0.5
 
 
 # -- robustness ----------------------------------------------------------------
