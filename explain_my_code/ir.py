@@ -270,10 +270,17 @@ class Node:
         return self
 
     def walk(self) -> Iterator[Node]:
-        """Pre-order traversal, self first."""
-        yield self
-        for child in self.children:
-            yield from child.walk()
+        """Pre-order traversal, self first.
+
+        Iterative on purpose. A recursive generator hands every node up through one
+        `yield from` frame per ancestor, so a full walk cost O(nodes * depth), and the
+        analysis passes walk the tree a few dozen times per request.
+        """
+        stack = [self]
+        while stack:
+            node = stack.pop()
+            yield node
+            stack.extend(reversed(node.children))
 
     def find(self, *kinds: Kind) -> Iterator[Node]:
         wanted = set(kinds)

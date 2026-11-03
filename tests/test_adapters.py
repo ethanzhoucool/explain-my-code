@@ -241,6 +241,46 @@ def test_broken_python_still_explains_the_prefix():
     assert "good" in names, "salvageable prefix was discarded"
 
 
+@pytest.mark.parametrize(
+    "source,kept",
+    [
+        ("def a():\n    return 1\n\ndef b(:\n    pass\n\ndef c():\n    return 3\n", {"a"}),
+        ("def a():\n    return 1\n\nx = foo(\n\ndef c():\n    return 3\n", {"a"}),
+        ("def a():\n    return 1\n\ndef b():\n    return 2\n\nif x\n", {"a", "b"}),
+        ("def a():\n    return 1\n\ndef b():\n", {"a"}),
+        ('def a():\n    return 1\n\ns = """never closed\n\ndef c():\n    return 3\n', {"a"}),
+    ],
+    ids=["bad-def", "unclosed-call", "last-line", "missing-body-at-eof", "unterminated-string"],
+)
+def test_broken_python_keeps_everything_above_the_error(source, kept):
+    result = get_adapter(Language.PYTHON).parse(source)
+    assert {n.name for n in result.root.walk() if n.kind in CALLABLE_KINDS} == kept
+
+
+def test_salvaging_a_large_broken_file_does_not_reparse_it_line_by_line(monkeypatch):
+    """Trimming one line per attempt re-parsed a 200KB file thousands of times."""
+    import ast
+
+    calls = []
+    real_parse = ast.parse
+    monkeypatch.setattr(ast, "parse", lambda text, *a, **k: calls.append(1) or real_parse(text, *a, **k))
+    body = "".join(f"def f{i}(x):\n    return x + {i}\n\n" for i in range(2_000))
+    result = get_adapter(Language.PYTHON).parse("x = (\ny = 1\n" + body)
+    assert any(d.severity == "error" for d in result.diagnostics)
+    assert len(calls) <= 3
+
+
+def test_walk_is_pre_order():
+    result = get_adapter(Language.PYTHON).parse(SNIPPETS[Language.PYTHON])
+
+    def recursive(node):
+        yield node
+        for child in node.children:
+            yield from recursive(child)
+
+    assert [n.id for n in result.root.walk()] == [n.id for n in recursive(result.root)]
+
+
 def test_empty_source_is_not_a_crash():
     for language in SNIPPETS:
         result = get_adapter(language).parse("")
