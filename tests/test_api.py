@@ -60,6 +60,28 @@ def test_all_levels_returns_all_three():
     assert body["eli5"]["summary"] != body["developer"]["summary"]
 
 
+def test_all_levels_parses_once(monkeypatch):
+    from explain_my_code.adapters.base import get_adapter
+    from explain_my_code.ir import Language
+
+    adapter = get_adapter(Language.PYTHON)
+    calls = []
+    real_parse = adapter.parse
+    monkeypatch.setattr(adapter, "parse", lambda code: calls.append(code) or real_parse(code))
+    client.post("/v1/explain/all-levels", json={"code": PY, "language": "python"})
+    assert len(calls) == 1
+
+
+def test_all_levels_node_ids_match_the_shared_analysis():
+    """Every level's lines must point at the nodes `analysis` describes. Parsing once per
+    level gave each level its own ids, so only ELI5's matched."""
+    body = client.post("/v1/explain/all-levels", json={"code": PY}).json()
+    function_id = body["analysis"]["functions"][0]["nodeId"]
+    for level in ("eli5", "beginner", "developer"):
+        definition = next(line for line in body[level]["lines"] if line["line"] == 1)
+        assert definition["nodeId"] == function_id, level
+
+
 def test_include_ir_is_opt_in():
     without = client.post("/v1/explain", json={"code": PY}).json()
     with_ir = client.post("/v1/explain", json={"code": PY, "includeIr": True}).json()
