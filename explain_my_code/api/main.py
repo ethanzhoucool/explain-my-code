@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 
 from explain_my_code import __version__
 from explain_my_code.api.schemas import (
@@ -25,6 +26,7 @@ from explain_my_code.api.schemas import (
 )
 from explain_my_code.cache import default_cache
 from explain_my_code.core import (
+    MAX_SOURCE_BYTES,
     SourceTooLarge,
     detect_language,
     explain,
@@ -64,6 +66,61 @@ app = FastAPI(
         {"name": "meta", "description": "Capabilities and health."},
     ],
 )
+
+
+# -- request size --------------------------------------------------------------------
+
+#: Ten times the source limit. JSON escaping can turn one byte of source into six
+#: (`\u0001`), so this leaves room for the largest legitimate snippet, and it is still
+#: far below anything that would strain a small instance.
+MAX_BODY_BYTES = 10 * MAX_SOURCE_BYTES
+
+_TOO_LARGE = f"Request body is larger than {MAX_BODY_BYTES // 1_000_000}MB."
+
+
+class BodySizeLimit:
+    """Refuse oversized request bodies before they are read into memory.
+
+    The `code` validators only run after Starlette has buffered and parsed the whole
+    body, so without this a multi-gigabyte POST is held in memory in full just to be
+    told it is too long. A declared Content-Length is checked up front; a chunked body
+    is counted as it arrives.
+    """
+
+    def __init__(self, app: Any, limit: int = MAX_BODY_BYTES) -> None:
+        self.app = app
+        self.limit = limit
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        declared = dict(scope["headers"]).get(b"content-length", b"")
+        if declared.isdigit() and int(declared) > self.limit:
+            response = JSONResponse(
+                {"error": "payload_too_large", "detail": _TOO_LARGE}, status_code=413
+            )
+            await response(scope, receive, send)
+            return
+
+        received = 0
+
+        async def counted_receive() -> dict[str, Any]:
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.limit:
+                    # Raised while the endpoint reads its body, so FastAPI turns it into
+                    # a 413 response like any other HTTPException.
+                    raise HTTPException(status_code=413, detail=_TOO_LARGE)
+            return message
+
+        await self.app(scope, counted_receive, send)
+
+
+app.add_middleware(BodySizeLimit)
 
 
 # -- rate limiting -------------------------------------------------------------------
@@ -129,17 +186,19 @@ def explain_all_levels(payload: ExplainRequest) -> Any:
     """All three levels in one call.
 
     The parse and analysis passes are the expensive part and are level-independent, so
-    the client can switch levels instantly instead of paying a round trip per level.
+    they run once and only the narration is repeated per level. The client can switch
+    levels instantly instead of paying a round trip per level.
     """
+    first = explain(
+        payload.code,
+        language=payload.language,
+        level=Level.ELI5,
+        filename=payload.filename,
+        enrich=False,
+    )
     out: dict[str, Any] = {}
     for level in Level:
-        result = explain(
-            payload.code,
-            language=payload.language,
-            level=level,
-            filename=payload.filename,
-            enrich=False,
-        )
+        result = first if level is first.level else first.at_level(level)
         out[level.value] = {
             "summary": result.summary,
             "lines": [line.to_dict() for line in result.lines],
@@ -183,6 +242,10 @@ async def explain_stream(payload: ExplainRequest) -> StreamingResponse:
 
     The static pass takes about a millisecond, so the page can render fully before the
     model has produced a token. The LLM is a progressive enhancement, not a dependency.
+
+    This handler is async, so everything blocking runs in the threadpool: the analysis
+    is CPU-bound and the provider SDKs stream over blocking HTTP. Run inline, a single
+    enrichment stalled every other request on the event loop until the model finished.
     """
 
     async def events() -> AsyncIterator[str]:
@@ -190,7 +253,8 @@ async def explain_stream(payload: ExplainRequest) -> StreamingResponse:
             return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
         try:
-            result = explain(
+            result = await run_in_threadpool(
+                explain,
                 payload.code,
                 language=payload.language,
                 level=payload.level,
@@ -215,7 +279,7 @@ async def explain_stream(payload: ExplainRequest) -> StreamingResponse:
         yield sse("enrich_start", {"provider": provider.name, "model": provider.model})
         prompt = build_context(result.analysis, result.level, result.source)
         try:
-            for chunk in provider.stream(SYSTEM_PROMPT, prompt):
+            async for chunk in iterate_in_threadpool(provider.stream(SYSTEM_PROMPT, prompt)):
                 yield sse("delta", {"text": chunk})
         except Exception as exc:  # provider SDKs raise their own error types
             yield sse("error", {"error": "enrichment_failed", "detail": str(exc)})
