@@ -12,6 +12,12 @@ LanguageId = Literal["python", "javascript", "java", "cpp", "sql"]
 LevelId = Literal["eli5", "beginner", "developer"]
 
 
+def _within_size_limit(value: str) -> str:
+    if len(value.encode("utf-8")) > MAX_SOURCE_BYTES:
+        raise ValueError(f"code exceeds the {MAX_SOURCE_BYTES // 1000}KB limit")
+    return value
+
+
 class ExplainRequest(BaseModel):
     code: str = Field(..., description="Source to explain.", min_length=1)
     language: LanguageId | None = Field(
@@ -36,9 +42,7 @@ class ExplainRequest(BaseModel):
     @field_validator("code")
     @classmethod
     def _within_size_limit(cls, value: str) -> str:
-        if len(value.encode("utf-8")) > MAX_SOURCE_BYTES:
-            raise ValueError(f"code exceeds the {MAX_SOURCE_BYTES // 1000}KB limit")
-        return value
+        return _within_size_limit(value)
 
 
 class AnalyzeRequest(BaseModel):
@@ -52,6 +56,13 @@ class AnalyzeRequest(BaseModel):
 class DetectRequest(BaseModel):
     code: str = Field(..., min_length=1)
     filename: str | None = None
+
+    @field_validator("code")
+    @classmethod
+    def _within_size_limit(cls, value: str) -> str:
+        # Detection runs a regex pass per language over the whole input, so it gets the
+        # same ceiling as /v1/explain rather than none at all.
+        return _within_size_limit(value)
 
 
 class SpanModel(BaseModel):

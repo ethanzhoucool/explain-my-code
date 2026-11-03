@@ -8,12 +8,23 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 
 from explain_my_code.adapters.base import get_adapter, load_all, registered_languages
 from explain_my_code.analysis.pipeline import Analysis, analyze
-from explain_my_code.ir import Annotation, Diagnostic, Language, Level, ParseResult
+from explain_my_code.ir import (
+    Annotation,
+    Diagnostic,
+    Kind,
+    Language,
+    Level,
+    Node,
+    ParseResult,
+    Span,
+)
 from explain_my_code.narrate.annotate import LineExplanation, annotate, line_view, summarize
 
 load_all()
@@ -32,22 +43,31 @@ EXTENSIONS = {
 
 #: (pattern, language, weight). Weighted because single keywords overlap heavily:
 #: `class` says nothing, `def foo(self)` and `#include <` say a great deal.
+#:
+#: Every pattern must stay linear in the input, because detection runs on whatever an
+#: anonymous caller posts. Two shapes are banned here:
+#:   * `^\s*` under re.M: `\s` crosses newlines, so every line start rescans all the
+#:     whitespace after it, and a few KB of blank lines cost minutes. Leading
+#:     indentation is `[^\S\n]*` (whitespace other than a newline).
+#:   * an unbounded `.*` followed by more pattern, tried once per occurrence: on one
+#:     long line each attempt rescans to the end of it.
+_INDENT = r"^[^\S\n]*"
 SIGNATURES: list[tuple[re.Pattern[str], Language, int]] = [
-    (re.compile(r"^\s*def\s+\w+\s*\(.*\)\s*(->.*)?:", re.M), Language.PYTHON, 5),
-    (re.compile(r"^\s*(from\s+[\w.]+\s+)?import\s+\w+", re.M), Language.PYTHON, 3),
-    (re.compile(r"^\s*(async\s+)?def\s|self\.", re.M), Language.PYTHON, 2),
-    (re.compile(r'^\s*(elif|print\()', re.M), Language.PYTHON, 2),
+    (re.compile(_INDENT + r"def\s+\w+\s*\(.*\)[^)\n]*:", re.M), Language.PYTHON, 5),
+    (re.compile(_INDENT + r"(from\s+[\w.]+\s+)?import\s+\w+", re.M), Language.PYTHON, 3),
+    (re.compile(_INDENT + r"(async\s+)?def\s|self\.", re.M), Language.PYTHON, 2),
+    (re.compile(_INDENT + r"(elif|print\()", re.M), Language.PYTHON, 2),
     (re.compile(r"#include\s*[<\"]", re.M), Language.CPP, 6),
     (re.compile(r"\bstd::\w+|->\s*\w+\(|::\w+\s*\(", re.M), Language.CPP, 4),
     (re.compile(r"\b(nullptr|template\s*<|namespace\s+\w+)", re.M), Language.CPP, 4),
-    (re.compile(r"^\s*(public|private|protected)\s+(static\s+)?(class|void|int|final)", re.M), Language.JAVA, 5),
+    (re.compile(_INDENT + r"(public|private|protected)\s+(static\s+)?(class|void|int|final)", re.M), Language.JAVA, 5),
     (re.compile(r"\bSystem\.out\.print|\bpublic\s+static\s+void\s+main", re.M), Language.JAVA, 6),
-    (re.compile(r"^\s*package\s+[\w.]+;|^\s*import\s+java", re.M), Language.JAVA, 5),
-    (re.compile(r"@Override|\bnew\s+\w+<.*>\(", re.M), Language.JAVA, 3),
+    (re.compile(_INDENT + r"package\s+[\w.]+;|" + _INDENT + r"import\s+java", re.M), Language.JAVA, 5),
+    (re.compile(r"@Override|\bnew\s+\w+<.{0,200}>\(", re.M), Language.JAVA, 3),
     (re.compile(r"\b(const|let|var)\s+\w+\s*=", re.M), Language.JAVASCRIPT, 4),
     (re.compile(r"=>\s*[{(]|\bfunction\s*\w*\s*\(", re.M), Language.JAVASCRIPT, 3),
     (re.compile(r"\bconsole\.(log|error|warn)\b|\brequire\(|\bexport\s+(default|const)", re.M), Language.JAVASCRIPT, 5),
-    (re.compile(r"^\s*(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|WITH|CREATE\s+TABLE)\b", re.M | re.I), Language.SQL, 7),
+    (re.compile(_INDENT + r"(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|WITH|CREATE\s+TABLE)\b", re.M | re.I), Language.SQL, 7),
     (re.compile(r"\b(LEFT\s+JOIN|INNER\s+JOIN|GROUP\s+BY|ORDER\s+BY)\b", re.M | re.I), Language.SQL, 4),
 ]
 
@@ -116,6 +136,40 @@ class Explanation:
             out["ir"] = self.analysis.root.to_dict()
         return out
 
+    def at_level(self, level: Level | str) -> Explanation:
+        """The same parse and analysis, narrated for another audience.
+
+        Parsing and analysis do not depend on the level, so this only re-runs the
+        narration, and node ids in the result match this explanation's `analysis`.
+        LLM enrichment is level-specific and is not carried over.
+        """
+        level = Level(level)
+        started = time.perf_counter()
+        parsed = ParseResult(
+            self.analysis.root,
+            self.language,
+            self.source,
+            self.diagnostics,
+            self.analysis.parser,
+            self.analysis.degraded,
+        )
+        annotations = annotate(parsed, self.analysis, level)
+        summary = summarize(self.analysis, level)
+        lines = line_view(annotations, level)
+        elapsed = (time.perf_counter() - started) * 1000
+        return Explanation(
+            language=self.language,
+            level=level,
+            source=self.source,
+            summary=summary,
+            lines=lines,
+            annotations=annotations,
+            analysis=self.analysis,
+            diagnostics=self.diagnostics,
+            detection_confidence=self.detection_confidence,
+            timings_ms={"explain": elapsed, "total": elapsed},
+        )
+
 
 class SourceTooLarge(ValueError):
     pass
@@ -149,19 +203,17 @@ def explain(
         language = Language(language)
 
     timings: dict[str, float] = {}
-
-    started = time.perf_counter()
-    parsed: ParseResult = get_adapter(language).parse(code)
-    timings["parse"] = (time.perf_counter() - started) * 1000
-
-    started = time.perf_counter()
-    analysis = analyze(parsed)
-    timings["analyze"] = (time.perf_counter() - started) * 1000
-
-    started = time.perf_counter()
-    annotations = annotate(parsed, analysis, level)
-    summary = summarize(analysis, level)
-    timings["explain"] = (time.perf_counter() - started) * 1000
+    adapter = get_adapter(language)
+    try:
+        parsed, analysis, annotations, summary = _static_pass(adapter.parse, code, level, timings)
+    except RecursionError:
+        # The lowering and analysis passes recurse over the tree, so pathological
+        # nesting (a thousand-term `a + b + ...` chain, thousands of nested brackets)
+        # can exhaust the interpreter's recursion limit. That is reported the way a
+        # parse failure is, instead of failing the whole request.
+        timings.clear()
+        too_deep = partial(_too_deep_to_explain, language=language, parser=adapter.parser_name)
+        parsed, analysis, annotations, summary = _static_pass(too_deep, code, level, timings)
 
     enrichment = None
     if enrich:
@@ -193,6 +245,49 @@ def explain(
         detection_confidence=confidence,
         timings_ms=timings,
         enrichment=enrichment,
+    )
+
+
+TOO_DEEP_MESSAGE = (
+    "This code is nested too deeply to explain: an expression or block goes hundreds of "
+    "levels deep (a very long `a + b + c + ...` chain counts). Split it up and try again."
+)
+
+
+def _static_pass(
+    parse: Callable[[str], ParseResult], code: str, level: Level, timings: dict[str, float]
+) -> tuple[ParseResult, Analysis, list[Annotation], str]:
+    started = time.perf_counter()
+    parsed = parse(code)
+    timings["parse"] = (time.perf_counter() - started) * 1000
+
+    started = time.perf_counter()
+    analysis = analyze(parsed)
+    timings["analyze"] = (time.perf_counter() - started) * 1000
+
+    started = time.perf_counter()
+    annotations = annotate(parsed, analysis, level)
+    summary = summarize(analysis, level)
+    timings["explain"] = (time.perf_counter() - started) * 1000
+    return parsed, analysis, annotations, summary
+
+
+def _too_deep_to_explain(source: str, *, language: Language, parser: str) -> ParseResult:
+    """An empty, degraded parse that carries the reason as an error diagnostic."""
+    lines = source.splitlines()
+    root = Node(
+        kind=Kind.MODULE,
+        span=Span(1, 0, max(len(lines), 1), 0),
+        name="module",
+        meta={"unparsed": True},
+    )
+    return ParseResult(
+        root,
+        language,
+        source,
+        [Diagnostic(TOO_DEEP_MESSAGE, severity="error")],
+        parser,
+        degraded=True,
     )
 
 

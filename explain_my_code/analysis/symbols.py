@@ -139,8 +139,9 @@ def _bindings_of(node: Node) -> list[tuple[str, str]]:
         targets = node.meta.get("targets") or ([node.meta["name"]] if node.meta.get("name") else [])
         for target in targets:
             base = str(target).split("[")[0].split(".")[0].strip("()* ")
-            # `self.x = 1` binds an attribute, not a local; skip the receiver.
-            if base and base.isidentifier() and "." not in str(target):
+            # `self.x = 1` binds an attribute and `memo[n] = 1` stores into a container
+            # that already exists: neither introduces a new local.
+            if base and base.isidentifier() and not any(c in str(target) for c in ".["):
                 out.append((base, "variable"))
     return out
 
@@ -197,6 +198,12 @@ def build_symbol_table(root: Node) -> SymbolTable:
         for child in node.children:
             if child.kind is Kind.NAME and child.meta.get("ctx") != "store":
                 symbol = inner.lookup(child.name or "")
+                if symbol is not None:
+                    symbol.used_at.append(child.span)
+            elif child.kind is Kind.CALL and not child.meta.get("receiver"):
+                # A plain call `fn(x)` reads `fn`. Python keeps the callee only as the
+                # call's name, so a callback parameter would otherwise look unused.
+                symbol = inner.lookup(str(child.meta.get("callee") or ""))
                 if symbol is not None:
                     symbol.used_at.append(child.span)
             visit(child, inner)
