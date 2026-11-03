@@ -328,7 +328,9 @@ class TreeSitterAdapter:
         name_field = _field(ts_node, "name")
         if name_field is None:
             return list(ts_node.named_children)
-        return [c for c in ts_node.named_children if c is not name_field]
+        # `!=`, not `is not`: py-tree-sitter hands out a fresh wrapper object on every
+        # access, so identity never matches even for the same node.
+        return [c for c in ts_node.named_children if c != name_field]
 
     def _param_nodes(self, ts_node: TSNode, owner: str, params: list[dict[str, Any]]) -> list[Node]:
         holder = _field(ts_node, "parameters") or _field(ts_node, "declarator")
@@ -402,8 +404,10 @@ class TreeSitterAdapter:
     # -- meta ------------------------------------------------------------------
 
     def meta_for(self, ts_node: TSNode, kind: Kind) -> dict[str, Any]:
+        # Looked up by name on `self`, so a language's own `_meta_call` (Java keeps the
+        # callee in `name`, not `function`) replaces the shared builder.
         base = _COMMON_META.get(kind)
-        meta = base(self, ts_node) if base else {}
+        meta = getattr(self, base)(ts_node) if base else {}
         hook = getattr(self, f"meta_{kind.value}", None)
         if hook is not None:
             meta.update(hook(ts_node))
@@ -674,30 +678,31 @@ _COLLECTION_HINTS = {
     "initializer_list": "list",
 }
 
-#: Kind -> shared meta builder. Language subclasses override with `meta_<kind>` hooks.
-_COMMON_META: dict[Kind, Callable[[TreeSitterAdapter, TSNode], dict[str, Any]]] = {
-    Kind.CALL: TreeSitterAdapter._meta_call,
-    Kind.METHOD_CALL: TreeSitterAdapter._meta_call,
-    Kind.BINOP: TreeSitterAdapter._meta_binary,
-    Kind.COMPARE: TreeSitterAdapter._meta_binary,
-    Kind.BOOLOP: TreeSitterAdapter._meta_binary,
-    Kind.UNOP: TreeSitterAdapter._meta_unary,
-    Kind.ASSIGN: TreeSitterAdapter._meta_assign,
-    Kind.AUG_ASSIGN: TreeSitterAdapter._meta_assign,
-    Kind.BRANCH: TreeSitterAdapter._meta_branch,
-    Kind.LOOP_WHILE: TreeSitterAdapter._meta_while,
-    Kind.LOOP_DO: TreeSitterAdapter._meta_while,
-    Kind.LOOP_FOR: TreeSitterAdapter._meta_classic_for,
-    Kind.LOOP_FOREACH: TreeSitterAdapter._meta_foreach,
-    Kind.RETURN: TreeSitterAdapter._meta_return,
-    Kind.ATTRIBUTE: TreeSitterAdapter._meta_member,
-    Kind.INDEX: TreeSitterAdapter._meta_index,
-    Kind.TERNARY: TreeSitterAdapter._meta_ternary,
-    Kind.THROW: TreeSitterAdapter._meta_throw,
-    Kind.TRY: TreeSitterAdapter._meta_try,
-    Kind.CATCH: TreeSitterAdapter._meta_catch,
-    Kind.LITERAL: TreeSitterAdapter._meta_literal,
-    Kind.SWITCH: TreeSitterAdapter._meta_switch,
-    Kind.COLLECTION: TreeSitterAdapter._meta_collection,
-    Kind.NEW: TreeSitterAdapter._meta_new,
+#: Kind -> name of the shared meta builder. A language subclass can override the builder
+#: itself (`_meta_call`) or extend it with a `meta_<kind>` hook.
+_COMMON_META: dict[Kind, str] = {
+    Kind.CALL: "_meta_call",
+    Kind.METHOD_CALL: "_meta_call",
+    Kind.BINOP: "_meta_binary",
+    Kind.COMPARE: "_meta_binary",
+    Kind.BOOLOP: "_meta_binary",
+    Kind.UNOP: "_meta_unary",
+    Kind.ASSIGN: "_meta_assign",
+    Kind.AUG_ASSIGN: "_meta_assign",
+    Kind.BRANCH: "_meta_branch",
+    Kind.LOOP_WHILE: "_meta_while",
+    Kind.LOOP_DO: "_meta_while",
+    Kind.LOOP_FOR: "_meta_classic_for",
+    Kind.LOOP_FOREACH: "_meta_foreach",
+    Kind.RETURN: "_meta_return",
+    Kind.ATTRIBUTE: "_meta_member",
+    Kind.INDEX: "_meta_index",
+    Kind.TERNARY: "_meta_ternary",
+    Kind.THROW: "_meta_throw",
+    Kind.TRY: "_meta_try",
+    Kind.CATCH: "_meta_catch",
+    Kind.LITERAL: "_meta_literal",
+    Kind.SWITCH: "_meta_switch",
+    Kind.COLLECTION: "_meta_collection",
+    Kind.NEW: "_meta_new",
 }
