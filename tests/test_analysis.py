@@ -75,6 +75,87 @@ def shallow(x):
     assert function(analysis, "shallow").max_nesting == 0
 
 
+CHAIN_SHAPES = {
+ "loop-if-else": {
+  "python": "def f(xs):\n    for x in xs:\n        if x:\n            a()\n        else:\n            b()\n",
+  "javascript": "function f(xs) {\n  for (const x of xs) {\n    if (x) {\n      a();\n    } else {\n      b();\n    }\n  }\n}\n",
+  "java": "class A {\n  void f(int[] xs) {\n    for (int x : xs) {\n      if (x > 0) {\n        a();\n      } else {\n        b();\n      }\n    }\n  }\n}\n",
+  "cpp": "void f(std::vector<int> xs) {\n  for (int x : xs) {\n    if (x) {\n      a();\n    } else {\n      b();\n    }\n  }\n}\n",
+ },
+ "if-inside-elif": {
+  "python": "def f(a, b, c):\n    if a:\n        x()\n    elif b:\n        if c:\n            y()\n",
+  "javascript": "function f(a, b, c) {\n  if (a) {\n    x();\n  } else if (b) {\n    if (c) {\n      y();\n    }\n  }\n}\n",
+  "java": "class A {\n  void f(boolean a, boolean b, boolean c) {\n    if (a) {\n      x();\n    } else if (b) {\n      if (c) {\n        y();\n      }\n    }\n  }\n}\n",
+  "cpp": "void f(bool a, bool b, bool c) {\n  if (a) {\n    x();\n  } else if (b) {\n    if (c) {\n      y();\n    }\n  }\n}\n",
+ },
+ "five-arm-chain": {
+  "python": "def f(n):\n    if n == 1:\n        return 1\n    elif n == 2:\n        return 2\n    elif n == 3:\n        return 3\n    elif n == 4:\n        return 4\n    else:\n        return 5\n",
+  "javascript": "function f(n) {\n  if (n === 1) { return 1; }\n  else if (n === 2) { return 2; }\n  else if (n === 3) { return 3; }\n  else if (n === 4) { return 4; }\n  else { return 5; }\n}\n",
+  "java": "class A {\n  int f(int n) {\n    if (n == 1) { return 1; }\n    else if (n == 2) { return 2; }\n    else if (n == 3) { return 3; }\n    else if (n == 4) { return 4; }\n    else { return 5; }\n  }\n}\n",
+  "cpp": "int f(int n) {\n  if (n == 1) { return 1; }\n  else if (n == 2) { return 2; }\n  else if (n == 3) { return 3; }\n  else if (n == 4) { return 4; }\n  else { return 5; }\n}\n",
+ },
+ "nested-if-in-else-block": {
+  "javascript": "function f(a, c) {\n  if (a) {\n    x();\n  } else {\n    y();\n    if (c) {\n      z();\n    }\n  }\n}\n",
+  "java": "class A {\n  void f(boolean a, boolean c) {\n    if (a) {\n      x();\n    } else {\n      y();\n      if (c) {\n        z();\n      }\n    }\n  }\n}\n",
+  "cpp": "void f(bool a, bool c) {\n  if (a) {\n    x();\n  } else {\n    y();\n    if (c) {\n      z();\n    }\n  }\n}\n",
+  "python": "def f(a, c):\n    if a:\n        x()\n    else:\n        y()\n        if c:\n            z()\n",
+ },
+}
+
+#: (cyclomatic, cognitive, max nesting), per SonarSource's rules for cognitive: `else`
+#: and `else if` add one with no nesting penalty, and their bodies are nested one level.
+CHAIN_EXPECTED = {
+    "loop-if-else": (3, 4, 2),
+    "if-inside-elif": (4, 4, 2),
+    "five-arm-chain": (5, 5, 1),
+    "nested-if-in-else-block": (3, 4, 2),
+}
+
+
+@pytest.mark.parametrize("shape", list(CHAIN_SHAPES))
+@pytest.mark.parametrize("language", ["python", "javascript", "java", "cpp"])
+def test_if_else_chains_score_the_same_in_every_language(shape, language):
+    """Tree-sitter nests `else` / `else if` under the `if` they continue, so each arm
+    used to count as a deeper level: a five-arm JS chain scored cognitive 36 and
+    nesting 8 where the same Python scores 5 and 1."""
+    measured = function(analyze(CHAIN_SHAPES[shape][language], Language(language)), "f")
+    assert (measured.cyclomatic, measured.cognitive, measured.max_nesting) == CHAIN_EXPECTED[shape]
+
+
+def test_nested_functions_are_scored_on_their_own():
+    analysis = analyze("""
+def outer(rows):
+    def inner(row):
+        for cell in row:
+            for part in cell:
+                if part:
+                    return part
+    return inner
+""")
+    outer, inner = function(analysis, "outer"), function(analysis, "inner")
+    assert (outer.cyclomatic, outer.max_nesting) == (1, 0)
+    assert (inner.cyclomatic, inner.max_nesting) == (4, 3)
+    assert analysis.metrics.cyclomatic == 4, "the file total still counts every decision"
+
+
+@pytest.mark.parametrize(
+    "language,source,code_lines",
+    [
+        (Language.PYTHON, "x = 1  # one\ny = 2  # two\n# a note\n", 2),
+        (Language.JAVASCRIPT, "const x = 1; // one\n/* a\n\n   note */\nconst y = 2;\n", 2),
+        (Language.CPP, "int x = 1; /* one */\n// a note\nint y = /* two */ 2;\n", 2),
+    ],
+    ids=["python", "javascript", "cpp"],
+)
+def test_lines_with_trailing_comments_are_still_code(language, source, code_lines):
+    assert analyze(source, language).metrics.code_lines == code_lines
+
+
+def test_java_else_gets_explained():
+    result = explain(CHAIN_SHAPES["nested-if-in-else-block"]["java"], language=Language.JAVA)
+    assert any(line.kind.value == "else" and line.line == 5 for line in result.lines)
+
+
 def test_maintainability_index_is_bounded():
     assert maintainability_index(0, 1, 0) == 100.0
     assert 0.0 <= maintainability_index(90_000, 400, 5000) <= 100.0
@@ -141,6 +222,159 @@ def process(groups):
     return out
 """)
     assert "log n" in function(analysis, "process").complexity_class
+
+
+MERGE_SORT = """
+def merge_sort(xs):
+    if len(xs) <= 1:
+        return xs
+    mid = len(xs) // 2
+    left = merge_sort(xs[:mid])
+    right = merge_sort(xs[mid:])
+    return merge(left, right)
+"""
+
+
+@pytest.mark.parametrize(
+    "language,source,name,expected",
+    [
+        (Language.PYTHON, MERGE_SORT, "merge_sort", "O(n log n)"),
+        (Language.PYTHON, """
+def quicksort(xs):
+    if len(xs) <= 1:
+        return xs
+    pivot = xs[0]
+    left = [x for x in xs[1:] if x < pivot]
+    right = [x for x in xs[1:] if x >= pivot]
+    return quicksort(left) + [pivot] + quicksort(right)
+""", "quicksort", "O(n log n)"),
+        (Language.PYTHON, """
+def quicksort(arr, lo, hi):
+    if lo < hi:
+        p = partition(arr, lo, hi)
+        quicksort(arr, lo, p - 1)
+        quicksort(arr, p + 1, hi)
+""", "quicksort", "O(n log n)"),
+        (Language.PYTHON, """
+def search(xs, lo, hi, target):
+    if lo > hi:
+        return -1
+    mid = (lo + hi) // 2
+    if xs[mid] < target:
+        return search(xs, mid + 1, hi, target)
+    return search(xs, lo, mid - 1, target)
+""", "search", "O(log n)"),
+        (Language.PYTHON, """
+def height(node):
+    if node is None:
+        return 0
+    return 1 + max(height(node.left), height(node.right))
+""", "height", "O(n)"),
+        (Language.PYTHON, """
+def find(node, key):
+    if node is None or node.key == key:
+        return node
+    if key < node.key:
+        return find(node.left, key)
+    return find(node.right, key)
+""", "find", "O(log n)"),
+        (Language.JAVASCRIPT, """
+function mergeSort(a) {
+  if (a.length <= 1) return a;
+  const mid = Math.floor(a.length / 2);
+  return merge(mergeSort(a.slice(0, mid)), mergeSort(a.slice(mid)));
+}
+""", "mergeSort", "O(n log n)"),
+        (Language.JAVASCRIPT, """
+function size(node) {
+  if (!node) return 0;
+  return 1 + size(node.left) + size(node.right);
+}
+""", "size", "O(n)"),
+        (Language.CPP, """
+int count(Node* n) {
+  if (!n) return 0;
+  return 1 + count(n->left) + count(n->right);
+}
+""", "count", "O(n)"),
+    ],
+    ids=["merge-sort", "quicksort", "quicksort-in-place", "binary-search", "tree-height",
+         "bst-find", "js-merge-sort", "js-tree-size", "cpp-tree-count"],
+)
+def test_divide_and_conquer_and_tree_recursion_are_not_exponential(language, source, name, expected):
+    """Two self-calls only blow up when each one shrinks the input by a constant. Halves,
+    partitions and tree children each get visited once, and calls in separate `return`s
+    never both run."""
+    analysis = analyze(source, language)
+    assert function(analysis, name).complexity_class == expected
+    assert "exponential-recursion" not in rules(analysis)
+
+
+@pytest.mark.parametrize(
+    "language,source,name,expected",
+    [
+        (Language.PYTHON, """
+def hanoi(n, a, b, c):
+    if n == 0:
+        return
+    hanoi(n - 1, a, c, b)
+    print(a, c)
+    hanoi(n - 1, b, a, c)
+""", "hanoi", "O(2^n)"),
+        (Language.PYTHON, """
+def paths(i, j):
+    if i == 0 or j == 0:
+        return 1
+    return paths(i - 1, j) + paths(i, j - 1)
+""", "paths", "O(2^n)"),
+        (Language.PYTHON, """
+def decode(s):
+    if not s:
+        return 1
+    total = decode(s[1:])
+    if len(s) > 1 and s[:2] < "27":
+        total += decode(s[2:])
+    return total
+""", "decode", "O(2^n)"),
+        (Language.PYTHON, """
+def trib(n):
+    if n < 3:
+        return 1
+    return trib(n - 1) + trib(n - 2) + trib(n - 3)
+""", "trib", "O(3^n)"),
+        (Language.JAVASCRIPT, "function fib(n) {\n  return n < 2 ? n : fib(n - 1) + fib(n - 2);\n}\n",
+         "fib", "O(2^n)"),
+    ],
+    ids=["hanoi", "grid-paths", "decode-ways", "tribonacci", "js-fib"],
+)
+def test_constant_step_branching_recursion_stays_exponential(language, source, name, expected):
+    analysis = analyze(source, language)
+    assert function(analysis, name).complexity_class == expected
+    assert "exponential-recursion" in rules(analysis)
+
+
+@pytest.mark.parametrize(
+    "language,source,expected",
+    [
+        (Language.PYTHON, "def f(xs):\n    total = sum(xs)\n    for x in xs:\n        print(x / total)\n",
+         "O(n)"),
+        (Language.PYTHON,
+         "def f(xs):\n    ys = sorted(xs)\n    for a in ys:\n        for b in ys:\n            print(a, b)\n",
+         "O(n²)"),
+        (Language.PYTHON, "def f(xs):\n    for x in sorted(xs):\n        print(x)\n", "O(n log n)"),
+        (Language.PYTHON, "def f(xs):\n    for x in xs:\n        print(max(xs))\n", "O(n²)"),
+        (Language.PYTHON,
+         "def f(groups):\n    out = []\n    for g in groups:\n        out.append(sorted(g))\n    return out\n",
+         "O(n² log n)"),
+        (Language.JAVASCRIPT,
+         "function f(xs) {\n  for (const x of xs.filter(Boolean)) {\n    console.log(x);\n  }\n}\n",
+         "O(n)"),
+    ],
+    ids=["linear-call-before-loop", "sort-before-nested-loops", "sorted-iterable",
+         "scan-inside-loop", "sort-inside-loop", "js-filtered-iterable"],
+)
+def test_library_costs_only_multiply_the_loops_they_run_inside(language, source, expected):
+    assert function(analyze(source, language), "f").complexity_class == expected
 
 
 # -- call graph --------------------------------------------------------------------
@@ -247,6 +481,77 @@ def test_unused_local_is_reported():
     assert "unused" in {symbol.name for symbol in analysis.symbols.unused}
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        "def log(msg):\n    logger = get_logger()\n    logger.info(msg)\n",
+        "def get(xs, i):\n    return xs[i]\n",
+        "def head(xs, n):\n    return xs[:n]\n",
+        "def fill(xs, i, v):\n    xs[i] = v\n",
+        "def setx(obj, v):\n    obj.x = v\n",
+        "def bump(d, k):\n    d[k] += 1\n",
+        "def drop(d, k):\n    del d[k]\n",
+        "def pair(a, b):\n    return [a, b]\n",
+        "def pair(a, b):\n    return a, b\n",
+        "def entry(k, v):\n    return {k: v}\n",
+        "def copy(xs):\n    return [*xs]\n",
+        'def greet(name):\n    return f"hi {name}"\n',
+        "def apply(fn, x):\n    return fn(x)\n",
+        "def dispatch(handlers, name, x):\n    return handlers[name](x)\n",
+        "def check(x, why):\n    assert x > 0, why\n",
+        "def fail(err, msg):\n    raise ValueError(msg) from err\n",
+        "def gen(x):\n    yield x\n",
+        'def route(cmd, verbose):\n    match cmd:\n        case "go" if verbose:\n            return 1\n',
+        "LIMIT = 5\n\ndef take(n=LIMIT):\n    return n\n",
+        'app = Flask(__name__)\n\n@app.route("/")\ndef index():\n    return "hi"\n',
+        "Base = make_base()\n\nclass Model(Base):\n    pass\n",
+    ],
+    ids=["method-receiver", "index", "slice", "index-store", "attribute-store", "index-augassign",
+         "del-index", "list", "tuple", "dict", "starred", "f-string", "callback", "subscript-call",
+         "assert", "raise-from", "yield", "match", "default-value", "decorator", "base-class"],
+)
+def test_python_reads_are_not_reported_as_unused(source):
+    """Each of these reads every name it binds. The Python lowering used to drop the
+    sub-expression doing the reading, which made the name look assigned-but-unread."""
+    assert [symbol.name for symbol in analyze(source).symbols.unused] == []
+
+
+def test_storing_into_a_container_does_not_shadow_it():
+    analysis = analyze("""
+memo = {}
+
+def fib(n):
+    if n in memo:
+        return memo[n]
+    memo[n] = fib(n - 1) + fib(n - 2)
+    return memo[n]
+""")
+    assert "shadowed-name" not in rules(analysis)
+
+
+@pytest.mark.parametrize(
+    "source,caller,callee",
+    [
+        ("def go():\n    return helper().strip()\n\ndef helper():\n    return ''\n", "go", "helper"),
+        ("def go(x):\n    return [helper(x)]\n\ndef helper(x):\n    return x\n", "go", "helper"),
+        ("def go(xs):\n    while xs:\n        xs.pop()\n    else:\n        helper()\n\n"
+         "def helper():\n    return 1\n", "go", "helper"),
+        ("def go():\n    raise make_error()\n\ndef make_error():\n    return ValueError()\n",
+         "go", "make_error"),
+    ],
+    ids=["chained-call", "call-in-list", "while-else", "raised-call"],
+)
+def test_python_call_graph_sees_nested_calls(source, caller, callee):
+    graph = analyze(source).call_graph
+    assert f"module.{callee}" in graph.edges[f"module.{caller}"]
+
+
+def test_decorator_calls_belong_to_the_enclosing_scope():
+    """`@app.route(...)` runs at definition time, so it is not a call `index` makes."""
+    analysis = analyze('app = Flask(__name__)\n\n@app.route("/")\ndef index():\n    return "hi"\n')
+    assert analysis.call_graph.edges["module.index"] == []
+
+
 def test_underscore_prefixed_names_are_left_alone():
     analysis = analyze("def go():\n    _ignored = 1\n    return 2\n")
     assert "_ignored" not in {symbol.name for symbol in analysis.symbols.unused}
@@ -310,3 +615,22 @@ def test_analysis_scales_without_blowing_up(size):
     source = "\n".join(f"def f{i}(x):\n    return x + {i}\n" for i in range(size))
     analysis = analyze(source)
     assert len(analysis.functions) == size
+
+
+# -- tree-sitter languages -----------------------------------------------------------
+
+
+def test_unused_local_is_reported_in_javascript():
+    source = "function go() {\n  const used = 1;\n  const unused = 2;\n  return used;\n}\n"
+    analysis = analyze(source, Language.JAVASCRIPT)
+    assert {symbol.name for symbol in analysis.symbols.unused} == {"unused"}
+
+
+def test_naive_recursion_is_exponential_in_java_too():
+    analysis = analyze(
+        "class A {\n  int fib(int n) {\n    if (n < 2) return n;\n"
+        "    return fib(n - 1) + fib(n - 2);\n  }\n}\n",
+        Language.JAVA,
+    )
+    assert function(analysis, "fib").complexity_class == "O(2^n)"
+    assert "exponential-recursion" in rules(analysis)

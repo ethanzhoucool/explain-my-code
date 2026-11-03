@@ -139,7 +139,7 @@ class JavaScriptAdapter(TreeSitterAdapter):
         children = super().recurse_into(ts_node, kind)
         if kind in {Kind.FUNCTION, Kind.METHOD, Kind.CONSTRUCTOR, Kind.LAMBDA}:
             params = _field(ts_node, "parameters")
-            children = [c for c in children if c is not params]
+            children = [c for c in children if c != params]
         return children
 
     def synth_children(self, ts_node, kind):  # type: ignore[override]

@@ -23,15 +23,17 @@ from explain_my_code.ir import (
 )
 
 try:
+    # SqlglotError, not ParseError: an unterminated string or comment fails in the
+    # tokenizer and raises TokenError, which is a sibling of ParseError.
     import sqlglot
     from sqlglot import expressions as exp
-    from sqlglot.errors import ParseError
+    from sqlglot.errors import SqlglotError
 
     SQLGLOT_AVAILABLE = True
 except ImportError:  # pragma: no cover
     sqlglot = None  # type: ignore[assignment]
     exp = None  # type: ignore[assignment]
-    ParseError = Exception  # type: ignore[assignment,misc]
+    SqlglotError = Exception  # type: ignore[assignment,misc]
     SQLGLOT_AVAILABLE = False
 
 
@@ -602,7 +604,7 @@ class SqlAdapter:
         diagnostics: list[Diagnostic] = []
         try:
             statements = sqlglot.parse(source)
-        except ParseError as error:
+        except SqlglotError as error:
             diagnostics.append(Diagnostic(f"Could not parse SQL: {error}", severity="error"))
             return ParseResult(
                 root, Language.SQL, source, diagnostics, self.parser_name, degraded=True

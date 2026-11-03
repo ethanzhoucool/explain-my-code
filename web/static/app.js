@@ -153,8 +153,10 @@
   /* ---------------------------------------------------------------- request */
   async function run() {
     if (state.busy) return;
-    const code = el.code.value.trim();
-    if (!code) return toast("Nothing to explain — paste some code first.");
+    // Sent exactly as typed. Trimming dropped leading blank lines, so every line number
+    // in the response landed that many lines above the editor line it describes.
+    const code = el.code.value;
+    if (!code.trim()) return toast("Nothing to explain — paste some code first.");
 
     state.busy = true;
     el.run.disabled = true;
