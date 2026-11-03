@@ -95,6 +95,21 @@ def test_analyze_returns_metrics_without_prose():
     assert body["analysis"]["metrics"]["cyclomatic"] == 1
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"code": "SELECT 'never closed", "language": "sql"},
+        {"code": "x = " + " + ".join(["a"] * 1_000) + "\n", "language": "python"},
+    ],
+    ids=["sql-token-error", "deep-python"],
+)
+@pytest.mark.parametrize("path", ["/v1/explain", "/v1/explain/all-levels", "/v1/analyze"])
+def test_hostile_input_gets_a_degraded_answer_not_a_500(path, payload):
+    response = TestClient(app, raise_server_exceptions=False).post(path, json=payload)
+    assert response.status_code == 200
+    assert any(d["severity"] == "error" for d in response.json()["diagnostics"])
+
+
 def test_detect_endpoint():
     body = client.post("/v1/detect", json={"code": "#include <cstdio>\nint main(){}"}).json()
     assert body["language"] == "cpp"
