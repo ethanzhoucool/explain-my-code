@@ -283,9 +283,32 @@ class TreeSitterAdapter:
         )
         node.extend(self.synth_children(ts_node, kind))
         if node_type not in self.LEAVES:
+            # Grammars without an `else_clause` (Java) put the else body straight in the
+            # `alternative` field. It gets the ELSE node JavaScript and C++ already have,
+            # so the walkthrough and the metrics see the same shape in every language.
+            alternative = _field(ts_node, "alternative") if kind is Kind.BRANCH else None
             for child in self.recurse_into(ts_node, kind):
-                node.extend(self.lower(child))
+                lowered = self.lower(child)
+                if (
+                    alternative is not None
+                    and child == alternative
+                    and child.type not in {"else_clause", "if_statement"}
+                ):
+                    lowered = [self._synthetic_else(ts_node, child, lowered)]
+                node.extend(lowered)
         return [node]
+
+    def _synthetic_else(self, if_node: TSNode, alternative: TSNode, body: list[Node]) -> Node:
+        keyword = next((c for c in if_node.children if c.type == "else"), alternative)
+        start_row, start_col = keyword.start_point
+        body_row, body_col = alternative.start_point
+        if body_row > start_row:
+            span = Span(start_row + 1, start_col, body_row, 10_000)
+        else:
+            span = Span(start_row + 1, start_col, body_row + 1, max(body_col, start_col + 1))
+        node = Node(kind=Kind.ELSE, span=span, name="else", meta=self.meta_else(alternative))
+        node.extend(body)
+        return node
 
     def synth_children(self, ts_node: TSNode, kind: Kind) -> list[Node]:
         """IR children with no 1:1 grammar node: parameters, mostly.
@@ -305,7 +328,9 @@ class TreeSitterAdapter:
         name_field = _field(ts_node, "name")
         if name_field is None:
             return list(ts_node.named_children)
-        return [c for c in ts_node.named_children if c is not name_field]
+        # `!=`, not `is not`: py-tree-sitter hands out a fresh wrapper object on every
+        # access, so identity never matches even for the same node.
+        return [c for c in ts_node.named_children if c != name_field]
 
     def _param_nodes(self, ts_node: TSNode, owner: str, params: list[dict[str, Any]]) -> list[Node]:
         holder = _field(ts_node, "parameters") or _field(ts_node, "declarator")
@@ -341,6 +366,12 @@ class TreeSitterAdapter:
 
     def kind_for(self, ts_node: TSNode) -> Kind | None:
         node_type = ts_node.type
+        if node_type == "else_clause" and any(
+            c.type == "if_statement" for c in ts_node.named_children
+        ):
+            # `else if` is one step of the chain, not an `else` holding a new `if`: let
+            # the inner `if` (marked `is_elif`) stand for it, as in Python and Java.
+            return None
         if node_type in self.LITERAL_TYPES:
             return Kind.LITERAL
         kind = self.KINDS.get(node_type)
@@ -373,8 +404,10 @@ class TreeSitterAdapter:
     # -- meta ------------------------------------------------------------------
 
     def meta_for(self, ts_node: TSNode, kind: Kind) -> dict[str, Any]:
+        # Looked up by name on `self`, so a language's own `_meta_call` (Java keeps the
+        # callee in `name`, not `function`) replaces the shared builder.
         base = _COMMON_META.get(kind)
-        meta = base(self, ts_node) if base else {}
+        meta = getattr(self, base)(ts_node) if base else {}
         hook = getattr(self, f"meta_{kind.value}", None)
         if hook is not None:
             meta.update(hook(ts_node))
@@ -444,12 +477,25 @@ class TreeSitterAdapter:
             is_guard = len(statements) == 1 and statements[0].type in {
                 "return_statement", "break_statement", "continue_statement", "throw_statement",
             }
+        # `is_elif` marks the `if` that IS an else branch, as the Python adapter does:
+        # inside an `else_clause` (JS, C++) or straight in the `alternative` field (Java).
+        parent = ts_node.parent
+        is_elif = parent is not None and (
+            parent.type == "else_clause"
+            or (parent.type == "if_statement" and _field(parent, "alternative") == ts_node)
+        )
         return {
             "condition": condition.strip("()"),
             "has_else": alternative is not None,
-            "is_elif": alternative is not None and alternative.type == "if_statement",
+            "is_elif": is_elif,
+            # Tree-sitter nests the rest of an if/else chain under the `if` it continues;
+            # Python lays it out beside it. The metrics need to know which.
+            "continues_parent": is_elif,
             "is_guard": is_guard,
         }
+
+    def meta_else(self, ts_node: TSNode) -> dict[str, Any]:
+        return {"continues_parent": True}
 
     def _meta_while(self, ts_node: TSNode) -> dict[str, Any]:
         condition = _field_text(ts_node, "condition", 56).strip("()")
@@ -632,30 +678,31 @@ _COLLECTION_HINTS = {
     "initializer_list": "list",
 }
 
-#: Kind -> shared meta builder. Language subclasses override with `meta_<kind>` hooks.
-_COMMON_META: dict[Kind, Callable[[TreeSitterAdapter, TSNode], dict[str, Any]]] = {
-    Kind.CALL: TreeSitterAdapter._meta_call,
-    Kind.METHOD_CALL: TreeSitterAdapter._meta_call,
-    Kind.BINOP: TreeSitterAdapter._meta_binary,
-    Kind.COMPARE: TreeSitterAdapter._meta_binary,
-    Kind.BOOLOP: TreeSitterAdapter._meta_binary,
-    Kind.UNOP: TreeSitterAdapter._meta_unary,
-    Kind.ASSIGN: TreeSitterAdapter._meta_assign,
-    Kind.AUG_ASSIGN: TreeSitterAdapter._meta_assign,
-    Kind.BRANCH: TreeSitterAdapter._meta_branch,
-    Kind.LOOP_WHILE: TreeSitterAdapter._meta_while,
-    Kind.LOOP_DO: TreeSitterAdapter._meta_while,
-    Kind.LOOP_FOR: TreeSitterAdapter._meta_classic_for,
-    Kind.LOOP_FOREACH: TreeSitterAdapter._meta_foreach,
-    Kind.RETURN: TreeSitterAdapter._meta_return,
-    Kind.ATTRIBUTE: TreeSitterAdapter._meta_member,
-    Kind.INDEX: TreeSitterAdapter._meta_index,
-    Kind.TERNARY: TreeSitterAdapter._meta_ternary,
-    Kind.THROW: TreeSitterAdapter._meta_throw,
-    Kind.TRY: TreeSitterAdapter._meta_try,
-    Kind.CATCH: TreeSitterAdapter._meta_catch,
-    Kind.LITERAL: TreeSitterAdapter._meta_literal,
-    Kind.SWITCH: TreeSitterAdapter._meta_switch,
-    Kind.COLLECTION: TreeSitterAdapter._meta_collection,
-    Kind.NEW: TreeSitterAdapter._meta_new,
+#: Kind -> name of the shared meta builder. A language subclass can override the builder
+#: itself (`_meta_call`) or extend it with a `meta_<kind>` hook.
+_COMMON_META: dict[Kind, str] = {
+    Kind.CALL: "_meta_call",
+    Kind.METHOD_CALL: "_meta_call",
+    Kind.BINOP: "_meta_binary",
+    Kind.COMPARE: "_meta_binary",
+    Kind.BOOLOP: "_meta_binary",
+    Kind.UNOP: "_meta_unary",
+    Kind.ASSIGN: "_meta_assign",
+    Kind.AUG_ASSIGN: "_meta_assign",
+    Kind.BRANCH: "_meta_branch",
+    Kind.LOOP_WHILE: "_meta_while",
+    Kind.LOOP_DO: "_meta_while",
+    Kind.LOOP_FOR: "_meta_classic_for",
+    Kind.LOOP_FOREACH: "_meta_foreach",
+    Kind.RETURN: "_meta_return",
+    Kind.ATTRIBUTE: "_meta_member",
+    Kind.INDEX: "_meta_index",
+    Kind.TERNARY: "_meta_ternary",
+    Kind.THROW: "_meta_throw",
+    Kind.TRY: "_meta_try",
+    Kind.CATCH: "_meta_catch",
+    Kind.LITERAL: "_meta_literal",
+    Kind.SWITCH: "_meta_switch",
+    Kind.COLLECTION: "_meta_collection",
+    Kind.NEW: "_meta_new",
 }

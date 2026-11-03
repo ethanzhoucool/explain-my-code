@@ -185,6 +185,46 @@ def test_finds_an_import(parsed):
     assert imports[0].meta.get("module")
 
 
+def test_calls_name_their_callee(parsed):
+    """Every adapter must fill `callee`: the call graph, the cost model and the
+    phrasebook all read it. Java's own builder used to be bypassed, leaving it empty."""
+    language, result = parsed
+    if language is Language.SQL:
+        pytest.skip("covered by the SQL function tests")
+    fib = next(n for n in result.root.walk() if n.kind in CALLABLE_KINDS and n.name == "fib")
+    calls = [n for n in fib.walk() if n.kind in {Kind.CALL, Kind.METHOD_CALL}]
+    assert [c.meta["callee"] for c in calls] == ["fib", "fib"]
+    assert all(c.meta["args"] for c in calls)
+
+
+def test_definitions_do_not_repeat_their_own_name_as_a_child(parsed):
+    """The `name` field is already the node's name; emitting it again as a NAME child
+    reads as a use of that name, which hid every unused JS variable."""
+    _, result = parsed
+    for node in result.root.walk():
+        if node.kind in CALLABLE_KINDS | {Kind.CLASS, Kind.DECL} and node.name:
+            names = [c.name for c in node.children if c.kind is Kind.NAME]
+            assert node.name not in names, f"{node.kind.value} `{node.name}` repeats its name"
+
+
+def test_java_calls_keep_their_receiver():
+    result = get_adapter(Language.JAVA).parse(
+        "class A { void f(int x) { System.out.println(x); } }"
+    )
+    call = next(n for n in result.root.walk() if n.kind is Kind.METHOD_CALL)
+    assert (call.meta["callee"], call.meta["receiver"]) == ("println", "System.out")
+    assert call.meta["is_builtin"]
+
+
+def test_cpp_member_and_index_read_cpp_field_names():
+    """C++ calls the object `argument`, not `object`; its own builders say so."""
+    result = get_adapter(Language.CPP).parse("int f(Point* p, int* v, int i) { return p->x + v[i]; }")
+    member = next(n for n in result.root.walk() if n.kind is Kind.ATTRIBUTE)
+    index = next(n for n in result.root.walk() if n.kind is Kind.INDEX)
+    assert (member.meta["object"], member.meta["attribute"], member.meta["via_pointer"]) == ("p", "x", True)
+    assert (index.meta["container"], index.meta["key"]) == ("v", "i")
+
+
 def test_keyword_inside_a_string_is_not_a_construct():
     """The v1 regression: `# for` and `"if"` are not control flow."""
     source = 'message = "if you can for loop while true"\n# for while if\n'
@@ -199,6 +239,46 @@ def test_broken_python_still_explains_the_prefix():
     assert any(d.severity == "error" for d in result.diagnostics)
     names = {n.name for n in result.root.walk() if n.kind in CALLABLE_KINDS}
     assert "good" in names, "salvageable prefix was discarded"
+
+
+@pytest.mark.parametrize(
+    "source,kept",
+    [
+        ("def a():\n    return 1\n\ndef b(:\n    pass\n\ndef c():\n    return 3\n", {"a"}),
+        ("def a():\n    return 1\n\nx = foo(\n\ndef c():\n    return 3\n", {"a"}),
+        ("def a():\n    return 1\n\ndef b():\n    return 2\n\nif x\n", {"a", "b"}),
+        ("def a():\n    return 1\n\ndef b():\n", {"a"}),
+        ('def a():\n    return 1\n\ns = """never closed\n\ndef c():\n    return 3\n', {"a"}),
+    ],
+    ids=["bad-def", "unclosed-call", "last-line", "missing-body-at-eof", "unterminated-string"],
+)
+def test_broken_python_keeps_everything_above_the_error(source, kept):
+    result = get_adapter(Language.PYTHON).parse(source)
+    assert {n.name for n in result.root.walk() if n.kind in CALLABLE_KINDS} == kept
+
+
+def test_salvaging_a_large_broken_file_does_not_reparse_it_line_by_line(monkeypatch):
+    """Trimming one line per attempt re-parsed a 200KB file thousands of times."""
+    import ast
+
+    calls = []
+    real_parse = ast.parse
+    monkeypatch.setattr(ast, "parse", lambda text, *a, **k: calls.append(1) or real_parse(text, *a, **k))
+    body = "".join(f"def f{i}(x):\n    return x + {i}\n\n" for i in range(2_000))
+    result = get_adapter(Language.PYTHON).parse("x = (\ny = 1\n" + body)
+    assert any(d.severity == "error" for d in result.diagnostics)
+    assert len(calls) <= 3
+
+
+def test_walk_is_pre_order():
+    result = get_adapter(Language.PYTHON).parse(SNIPPETS[Language.PYTHON])
+
+    def recursive(node):
+        yield node
+        for child in node.children:
+            yield from recursive(child)
+
+    assert [n.id for n in result.root.walk()] == [n.id for n in recursive(result.root)]
 
 
 def test_empty_source_is_not_a_crash():
