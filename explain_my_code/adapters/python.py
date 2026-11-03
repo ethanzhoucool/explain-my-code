@@ -1041,6 +1041,13 @@ class PythonAdapter:
             diagnostics.append(
                 Diagnostic(message="Explained the portion above the error.", severity="info")
             )
+        except MemoryError as exc:
+            # CPython's parser reports a stack overflow on extreme nesting as MemoryError
+            # (bare on 3.11, "Python source too complex to parse" from 3.12). Input is
+            # capped at MAX_SOURCE_BYTES, so this is that condition, not a real OOM. It is
+            # the same as our own passes hitting the recursion limit and is reported the
+            # same way, by the caller.
+            raise RecursionError(str(exc) or "parser stack overflowed") from exc
 
         lowerer = PythonLowerer(source)
         root = lowerer.lower(tree)
@@ -1076,6 +1083,8 @@ def _parse_longest_prefix(source: str, error_line: int | None = None) -> ast.Mod
             return ast.parse("\n".join(lines[:end]))
         except SyntaxError as exc:
             end = min(end, exc.lineno) - 1 if exc.lineno else end - 1
+        except (MemoryError, RecursionError):
+            end -= 1
     return None
 
 
