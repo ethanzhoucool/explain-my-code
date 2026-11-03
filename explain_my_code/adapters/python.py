@@ -1026,7 +1026,7 @@ class PythonAdapter:
                     severity="error",
                 )
             )
-            partial = _parse_longest_prefix(source)
+            partial = _parse_longest_prefix(source, exc.lineno)
             if partial is None:
                 lines = source.splitlines()
                 root = Node(
@@ -1041,6 +1041,13 @@ class PythonAdapter:
             diagnostics.append(
                 Diagnostic(message="Explained the portion above the error.", severity="info")
             )
+        except MemoryError as exc:
+            # CPython's parser reports a stack overflow on extreme nesting as MemoryError
+            # (bare on 3.11, "Python source too complex to parse" from 3.12). Input is
+            # capped at MAX_SOURCE_BYTES, so this is that condition, not a real OOM. It is
+            # the same as our own passes hitting the recursion limit and is reported the
+            # same way, by the caller.
+            raise RecursionError(str(exc) or "parser stack overflowed") from exc
 
         lowerer = PythonLowerer(source)
         root = lowerer.lower(tree)
@@ -1056,18 +1063,28 @@ class PythonAdapter:
         )
 
 
-def _parse_longest_prefix(source: str) -> ast.Module | None:
+def _parse_longest_prefix(source: str, error_line: int | None = None) -> ast.Module | None:
     """Salvage a partial tree from broken input.
 
     Someone pasting a snippet mid-edit should still get an explanation of the lines
     that do parse, rather than a blank page.
+
+    A prefix that still contains the line a SyntaxError was reported on fails the same
+    way, so each failed attempt jumps to just above the reported line instead of
+    retrying one line shorter. Trimming a line at a time re-parsed the file once per
+    line: about seven seconds for a 200KB file broken near the top.
     """
     lines = source.splitlines()
-    for end in range(len(lines) - 1, 0, -1):
+    end = len(lines) - 1
+    if error_line:
+        end = min(end, error_line - 1)
+    while end > 0:
         try:
             return ast.parse("\n".join(lines[:end]))
-        except SyntaxError:
-            continue
+        except SyntaxError as exc:
+            end = min(end, exc.lineno) - 1 if exc.lineno else end - 1
+        except (MemoryError, RecursionError):
+            end -= 1
     return None
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from explain_my_code.core import SourceTooLarge, detect_language, explain, supported_languages
@@ -134,6 +136,31 @@ def test_detection_reports_low_confidence_on_ambiguous_input():
     assert detect_language("x = 1").confidence < 1.0
 
 
+def test_detection_still_reads_indented_and_crlf_lines():
+    method = "class A:\r\n    def size(self) -> int:\r\n        return 1\r\n"
+    assert detect_language(method).language is Language.PYTHON
+    assert detect_language("\n\n   SELECT a\n   FROM t\n").language is Language.SQL
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "\n" * 20_000,
+        " \t\r\n" * 5_000,
+        "def a(" + ")->" * 7_000,
+        "new A<>" * 15_000,
+    ],
+    ids=["blank-lines", "mixed-whitespace", "unclosed-def-header", "generic-new"],
+)
+def test_detection_stays_fast_on_adversarial_input(source):
+    """Detection runs on whatever an anonymous caller posts. `^\\s*` under re.M used to
+    rescan every following blank line from each line start: 20KB of newlines took
+    about 40 seconds, and the 200KB the API accepts would take about an hour."""
+    started = time.perf_counter()
+    detect_language(source)
+    assert time.perf_counter() - started < 0.5
+
+
 # -- robustness ----------------------------------------------------------------
 
 
@@ -156,6 +183,47 @@ def test_unicode_survives_the_round_trip():
 def test_syntax_error_is_reported_not_raised():
     result = explain("def broken(:\n    pass\n")
     assert any(d.severity == "error" for d in result.diagnostics)
+
+
+@pytest.mark.parametrize(
+    "source",
+    ["SELECT 'unterminated", 'SELECT "unterminated', "SELECT a FROM t /* unterminated"],
+    ids=["single-quote", "double-quote", "block-comment"],
+)
+def test_sql_that_fails_to_tokenize_is_reported_not_raised(source):
+    """sqlglot raises TokenError, not ParseError, when a string or comment never ends."""
+    result = explain(source, language=Language.SQL)
+    assert result.analysis.degraded
+    assert any(d.severity == "error" for d in result.diagnostics)
+
+
+DEEP_INPUTS = {
+    "python-long-chain": (Language.PYTHON, "x = " + " + ".join(["a"] * 1_000) + "\n"),
+    "python-parser-overflow": (Language.PYTHON, "x = " + "-" * 10_000 + "1\n"),
+    "javascript-nested-arrays": (Language.JAVASCRIPT, "const x = " + "[" * 3_000 + "]" * 3_000 + ";\n"),
+    "java-nested-parens": (
+        Language.JAVA, "class A { int f() { return " + "(" * 3_000 + "1" + ")" * 3_000 + "; } }\n"
+    ),
+    "cpp-nested-parens": (Language.CPP, "int f() { return " + "(" * 3_000 + "1" + ")" * 3_000 + "; }\n"),
+    "sql-nested-parens": (Language.SQL, "SELECT " + "(" * 500 + "1" + ")" * 500 + ";\n"),
+}
+
+
+@pytest.mark.parametrize("language,source", list(DEEP_INPUTS.values()), ids=list(DEEP_INPUTS))
+def test_pathologically_deep_nesting_is_reported_not_raised(language, source):
+    """These used to escape `explain()` as RecursionError (or MemoryError from CPython's
+    own parser), which the API turned into a bare 500."""
+    result = explain(source, language=language)
+    assert result.analysis.degraded
+    assert any("nested too deeply" in d.message for d in result.diagnostics)
+    assert isinstance(result.summary, str)
+    assert result.to_dict()["degraded"] is True
+
+
+def test_moderately_deep_code_is_still_explained():
+    result = explain("x = " + " + ".join(["a"] * 150) + "\n", language=Language.PYTHON)
+    assert not result.analysis.degraded
+    assert result.lines
 
 
 def test_supported_languages_are_all_available():
