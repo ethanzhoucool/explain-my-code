@@ -94,6 +94,28 @@ def test_all_levels_returns_all_three():
     assert body["eli5"]["summary"] != body["developer"]["summary"]
 
 
+def test_all_levels_parses_once(monkeypatch):
+    from explain_my_code.adapters.base import get_adapter
+    from explain_my_code.ir import Language
+
+    adapter = get_adapter(Language.PYTHON)
+    calls = []
+    real_parse = adapter.parse
+    monkeypatch.setattr(adapter, "parse", lambda code: calls.append(code) or real_parse(code))
+    client.post("/v1/explain/all-levels", json={"code": PY, "language": "python"})
+    assert len(calls) == 1
+
+
+def test_all_levels_node_ids_match_the_shared_analysis():
+    """Every level's lines must point at the nodes `analysis` describes. Parsing once per
+    level gave each level its own ids, so only ELI5's matched."""
+    body = client.post("/v1/explain/all-levels", json={"code": PY}).json()
+    function_id = body["analysis"]["functions"][0]["nodeId"]
+    for level in ("eli5", "beginner", "developer"):
+        definition = next(line for line in body[level]["lines"] if line["line"] == 1)
+        assert definition["nodeId"] == function_id, level
+
+
 def test_include_ir_is_opt_in():
     without = client.post("/v1/explain", json={"code": PY}).json()
     with_ir = client.post("/v1/explain", json={"code": PY, "includeIr": True}).json()
@@ -105,6 +127,21 @@ def test_analyze_returns_metrics_without_prose():
     body = client.post("/v1/analyze", json={"code": PY}).json()
     assert "summary" not in body
     assert body["analysis"]["metrics"]["cyclomatic"] == 1
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"code": "SELECT 'never closed", "language": "sql"},
+        {"code": "x = " + " + ".join(["a"] * 1_000) + "\n", "language": "python"},
+    ],
+    ids=["sql-token-error", "deep-python"],
+)
+@pytest.mark.parametrize("path", ["/v1/explain", "/v1/explain/all-levels", "/v1/analyze"])
+def test_hostile_input_gets_a_degraded_answer_not_a_500(path, payload):
+    response = TestClient(app, raise_server_exceptions=False).post(path, json=payload)
+    assert response.status_code == 200
+    assert any(d["severity"] == "error" for d in response.json()["diagnostics"])
 
 
 def test_detect_endpoint():
@@ -161,6 +198,50 @@ def test_streaming_reports_a_missing_provider_without_failing_the_request(monkey
         body = "".join(response.iter_text())
     assert "event: static" in body      # the static explanation still arrived
     assert "no_provider" in body
+
+
+class _SlowProvider:
+    """Streams like a real SDK: blocking network reads between chunks."""
+
+    name = "fake"
+    model = "fake-model"
+
+    def stream(self, system, prompt):
+        import time
+
+        for chunk in ('{"summary": "', "slow", '"}'):
+            time.sleep(0.3)
+            yield chunk
+
+
+async def test_streaming_enrichment_does_not_block_other_requests(monkeypatch):
+    """A blocking provider stream used to run on the event loop itself, so every other
+    request (here /healthz) waited for the model to finish."""
+    import asyncio
+    import time
+
+    import httpx
+
+    monkeypatch.setattr("explain_my_code.api.main.get_provider", lambda name=None: _SlowProvider())
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        started = time.perf_counter()
+
+        async def stream() -> tuple[str, float]:
+            response = await ac.post("/v1/explain/stream", json={"code": PY, "enrich": True})
+            return response.text, time.perf_counter() - started
+
+        async def health() -> float:
+            await asyncio.sleep(0.1)  # let the stream start first
+            response = await ac.get("/healthz")
+            assert response.status_code == 200
+            return time.perf_counter() - started
+
+        (body, stream_done), health_done = await asyncio.gather(stream(), health())
+
+    assert "event: delta" in body and "slow" in body
+    assert stream_done >= 0.9
+    assert health_done < 0.6, f"/healthz waited {health_done:.2f}s behind the stream"
 
 
 # -- cache -------------------------------------------------------------------------
